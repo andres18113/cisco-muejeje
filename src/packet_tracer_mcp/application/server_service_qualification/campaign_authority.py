@@ -7,6 +7,7 @@ continuity before every effect and never regained once lost.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,7 @@ from ...domain.enterprise.models.service_qualification import (
     RefusalSubject,
     ReleaseRecord,
     StageDefinition,
+    diagnostic_lifecycle_continuity,
     diagnostic_lifecycle_refusals,
     refusal,
 )
@@ -297,3 +299,131 @@ def _diagnostic_admission_checks(
                 )
             )
     return found, observed
+
+
+@dataclass
+class ExecutionAuthority:
+    """Whether one admitted invocation still holds its execution authority.
+
+    The admission reading bound one Packet Tracer incarnation and one campaign
+    claim before any effect existed. Neither is held by anything afterwards: a
+    crashed instance is replaced by one that polls the same mailbox, and a
+    claim can be removed out from under this run. Every later effect, and
+    owned cleanup above all, asks again. The first observed loss is kept and
+    authority is never regained inside the run.
+    """
+
+    boundaries: QualificationBoundaries
+    record: QualificationRecord
+    #: Whether the stage declares a diagnostic profile. A stage without one
+    #: holds no local authority that could be lost.
+    diagnostic: bool
+    #: What the admission reading observed, which every later pairing is
+    #: compared with; None when the admission read no pairing.
+    admitted_lifecycle: DiagnosticLifecycleObservation | None
+    #: The campaign claim this invocation holds, or None for a stage that
+    #: declares no diagnostic profile. It is re-verified before effects.
+    claim: Any | None = None
+    #: The first observed loss of live execution authority. Sticky: authority
+    #: is never re-acquired inside a run, because a window in which some other
+    #: process answered cannot be closed retroactively.
+    lost: str = ""
+    #: A phase-local refusal to start another authority observation. Unlike an
+    #: observed mismatch it is not sticky across the cleanup-reserve boundary.
+    observation_refused: str = ""
+    #: Wall clock spent on bounded local authority observations, which cost no
+    #: bridge operation and still cost the phase time.
+    local_observation_seconds: float = 0.0
+
+    def live(
+        self,
+        moment: str,
+        deadline: Callable[[], float],
+        stop: Callable[[str], None],
+    ) -> bool:
+        """Re-decide whether this invocation still holds execution authority.
+
+        It enumerates local processes, reads one small file and lists one
+        directory. It contacts Packet Tracer through nothing and spends no
+        ledger operation, but it still spends wall-clock: the current phase
+        must admit the observation and gives every helper the same absolute
+        `deadline`, which is read only once an observation is needed. A loss
+        is recorded on the record and reported through `stop`.
+        """
+        if self.lost:
+            return False
+        if not self.diagnostic:
+            return True
+        phase_deadline = deadline()
+        clock = self.boundaries.clock
+        if clock() >= phase_deadline:
+            return self._refuse_observation(moment)
+        self.observation_refused = ""
+        reasons: list[str] = []
+        coordinator = self.boundaries.campaign_coordinator
+        if coordinator is not None and self.claim is not None:
+            try:
+                reasons.extend(coordinator.verify(self.claim) or ())
+            except Exception as exc:
+                reasons.append(f"campaign_claim:unverifiable:{type(exc).__name__}")
+        lifecycle = self.boundaries.diagnostic_lifecycle
+        if not reasons and callable(lifecycle) and self.admitted_lifecycle is not None:
+            if clock() >= phase_deadline:
+                return self._refuse_observation(moment)
+            observed = self.observe_lifecycle(lifecycle, phase_deadline)
+            reasons.extend(
+                item
+                for item in diagnostic_lifecycle_continuity(
+                    self.admitted_lifecycle, observed
+                )
+                # A mailbox that still holds artifacts mid-run is this run's
+                # own traffic in flight, not a second instance. Only identity
+                # decides authority here; drainage is a finalization fact.
+                if not item.startswith("mailbox:")
+            )
+        if not reasons:
+            return True
+        self.lost = bounded(f"{moment}:{reasons[0]}")
+        record = self.record
+        record.engine_residue.extend(reasons)
+        record.secondary_failures.extend(f"authority:{item}" for item in reasons)
+        record.limitations.append(f"execution_authority_lost_before:{bounded(moment)}")
+        stop(f"execution_authority_lost:{reasons[0]}")
+        return False
+
+    def _refuse_observation(self, moment: str) -> bool:
+        """Record that this phase had no time to observe local authority."""
+        refusal = f"{bounded(moment)}:time_budget_exhausted"
+        self.observation_refused = refusal
+        failure = f"authority_observation_not_admitted:{refusal}"
+        if failure not in self.record.secondary_failures:
+            self.record.secondary_failures.append(failure)
+        limitation = f"local_authority_observation_not_admitted:{refusal}"
+        if limitation not in self.record.limitations:
+            self.record.limitations.append(limitation)
+        return False
+
+    def observe_lifecycle(
+        self,
+        lifecycle: Callable[[float | None], DiagnosticLifecycleObservation],
+        deadline: float,
+    ) -> DiagnosticLifecycleObservation:
+        """Read and charge one local pairing under an absolute deadline."""
+        clock = self.boundaries.clock
+        started = clock()
+        try:
+            observed = lifecycle(deadline)
+        except Exception as exc:
+            observed = DiagnosticLifecycleObservation(
+                error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
+            )
+        finished = clock()
+        self.local_observation_seconds += max(0.0, finished - started)
+        self.record.budget.local_observation_seconds = round(
+            self.local_observation_seconds, 3
+        )
+        if finished > deadline and not observed.error:
+            return DiagnosticLifecycleObservation(
+                error="local_observation_deadline_exceeded:lifecycle"
+            )
+        return observed

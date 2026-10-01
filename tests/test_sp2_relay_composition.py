@@ -9,8 +9,10 @@ import pytest
 from sp1_routed_fixture import compose, topology_payload
 
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
-    _path_admission,
     _plan_for,
+)
+from packet_tracer_mcp.application.use_cases.service_path_admission import (
+    path_admission,
 )
 from packet_tracer_mcp.infrastructure.generator.configuration_renderer import (
     PacketTracerIosRenderer,
@@ -206,7 +208,7 @@ def test_remote_dhcp_paths_close_over_relay_and_both_route_directions():
     """A selected remote PC gets a plan route proof without a static IP."""
     payload, _ids = _remote_dhcp_payload()
     plans = compose(payload)
-    unsupported, routed = _path_admission(
+    unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,
@@ -246,7 +248,7 @@ def test_a_more_specific_wrong_return_route_refuses_the_whole_client_prefix():
             }
         )
     )
-    unsupported, _routed = _path_admission(
+    unsupported, _routed = path_admission(
         configuration,
         plans.services,
         plans.services.services,
@@ -277,7 +279,7 @@ def test_a_covering_aggregate_return_route_admits_the_entire_client_prefix():
             }
         )
     ]
-    unsupported, routed = _path_admission(
+    unsupported, routed = path_admission(
         configuration,
         plans.services,
         plans.services.services,

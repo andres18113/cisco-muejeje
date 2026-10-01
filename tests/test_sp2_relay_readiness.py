@@ -12,15 +12,15 @@ from sp1_routed_readings import dependent as static_dependent
 from sp1_routed_readings import healthy as healthy_routed_readings
 from test_sp2_relay_composition import _remote_dhcp_payload
 
-from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
-    _dhcp_prelease_paths,
-    _path_admission,
-)
 from packet_tracer_mcp.application.use_cases.apply_services import (
     bind_routed_lease_result,
 )
 from packet_tracer_mcp.application.use_cases.service_access_readiness_gate import (
     ServiceAccessReadinessGate,
+)
+from packet_tracer_mcp.application.use_cases.service_path_admission import (
+    dhcp_prelease_paths,
+    path_admission,
 )
 from packet_tracer_mcp.domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
@@ -52,7 +52,7 @@ def test_unbound_remote_client_is_refused_without_a_router_read():
     """An empty DHCP address cannot turn into ungated routed permission."""
     payload, ids = _remote_dhcp_payload()
     plans = compose(payload)
-    unsupported, routed = _path_admission(
+    unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,
@@ -101,13 +101,13 @@ def test_prelease_readiness_uses_an_explicit_network_route_target():
     """The network target is scoped to DHCP readiness, not a client address."""
     payload, ids = _remote_dhcp_payload()
     plans = compose(payload)
-    _unsupported, routed = _path_admission(
+    _unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,
         links=plans.composition.topology.links,
     )
-    provisional = _dhcp_prelease_paths(routed, plans.services.services)
+    provisional = dhcp_prelease_paths(routed, plans.services.services)
     branch = provisional[(ids["BR1-DEFAULT-PC-01"], ids["HQ-DEFAULT-DNS-01"])]
     assert branch.client_network == "10.40.0.16/29"
     assert branch.client_ipv4 == "10.40.0.16"
@@ -128,7 +128,7 @@ def test_lease_binding_refuses_wrong_mask_outside_or_network_address(address, ma
     """The route target can only be an assigned host in the selected subnet."""
     payload, ids = _remote_dhcp_payload()
     plans = compose(payload)
-    _unsupported, routed = _path_admission(
+    _unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,
@@ -152,7 +152,7 @@ def test_failed_peer_lease_is_omitted_from_a_bound_clients_route_round():
     """One local lease failure cannot contaminate another client's router read."""
     payload, ids = _remote_dhcp_payload()
     plans = compose(payload)
-    _unsupported, routed = _path_admission(
+    _unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,
@@ -189,7 +189,7 @@ def test_only_a_stable_attributed_physical_pool_row_binds_routed_readiness():
     """A successful status alone cannot supply a routed DHCP client address."""
     payload, ids = _remote_dhcp_payload()
     plans = compose(payload)
-    _unsupported, routed = _path_admission(
+    _unsupported, routed = path_admission(
         plans.configuration,
         plans.services,
         plans.services.services,

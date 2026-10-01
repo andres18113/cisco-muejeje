@@ -22,12 +22,11 @@ from ...domain.enterprise.models.service_qualification import (
     MeasurementStatus,
     QualificationRecord,
     StageDefinition,
-    diagnostic_lifecycle_continuity,
 )
 from ...domain.enterprise.services.service_qualification_evidence import Assessment
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ..use_cases.deploy_enterprise_topology import PhysicalTopologyRuntime
-from .campaign_authority import CampaignHold
+from .campaign_authority import CampaignHold, ExecutionAuthority
 from .contracts import Q3ProductContract, bounded
 from .ledgered_transport import LedgeredTransport
 from .operation_budget import LedgerPhase, OperationLedger, OperationRefused
@@ -85,10 +84,6 @@ class Execution:
     #: result the diagnostic exists to produce and never revokes a state the
     #: run did establish.
     established: set[str] = field(default_factory=set)
-    #: The first observed loss of live execution authority. Sticky: authority
-    #: is never re-acquired inside a run, because a window in which some other
-    #: process answered cannot be closed retroactively.
-    authority_lost: str = ""
     removal_candidates: list[DevicePlan] = field(default_factory=list)
     fixtures_ready: bool = False
     #: Run-bag state the finalizer must release. A collision means the run key
@@ -107,15 +102,12 @@ class Execution:
     #: work: it declares its terminal reading instead of taking it, and
     #: restarts no stimulus.
     cancelled: bool = False
-    #: Wall clock spent on bounded local authority observations, which cost no
-    #: bridge operation and still cost the phase time.
-    local_observation_seconds: float = 0.0
-    #: A phase-local refusal to start another authority observation. Unlike an
-    #: observed mismatch it is not sticky across the cleanup-reserve boundary.
-    authority_observation_refused: str = ""
+    #: This invocation's live execution authority: the sticky first loss, a
+    #: phase-local refusal to observe, and the local observation time spent.
+    authority: ExecutionAuthority = field(init=False)
 
     def __post_init__(self) -> None:
-        """Bind this execution's effect guard before anything can dispatch.
+        """Bind this execution's authority and effect guard before any dispatch.
 
         Binding here rather than at one call site is deliberate: an execution
         that exists over a ledger is the only thing that can answer for that
@@ -123,6 +115,13 @@ class Execution:
         otherwise refuse every effect it makes. The ledger still fails closed
         for anything that opens an effect scope without one.
         """
+        self.authority = ExecutionAuthority(
+            boundaries=self.run.boundaries,
+            record=self.run.record,
+            diagnostic=self.definition.profile_id != "",
+            admitted_lifecycle=self.run.diagnostic_lifecycle,
+            claim=self.claim,
+        )
         ledger = self.run.ledger
         if ledger is not None:
             ledger.bind_effect_guard(self.effect_guard)
@@ -182,75 +181,18 @@ class Execution:
     def live_authority(self, moment: str, deadline: float | None = None) -> bool:
         """Re-decide whether this invocation still holds execution authority.
 
-        The admission reading bound one Packet Tracer incarnation and one
-        campaign claim before any effect existed. Neither is held by anything
-        afterwards: a crashed instance is replaced by one that polls the same
-        mailbox, and a claim can be removed out from under this run. Every
-        later effect, and owned cleanup above all, asks again.
-
-        It enumerates local processes, reads one small file and lists one
-        directory. It contacts Packet Tracer through nothing and spends no
-        ledger operation, but it still spends wall-clock: the current phase
-        must admit the observation and gives every helper the same absolute
-        deadline. The first observed loss is kept and authority is never
-        regained inside the run.
+        The decision is `ExecutionAuthority.live`. Its phase deadline is the
+        given absolute `deadline` or, when none is given, the ledger's
+        deadline for the active phase, read only once an observation is
+        needed. A loss stops the run through this execution's stop rule.
         """
-        if self.authority_lost:
-            return False
-        if self.definition.profile_id == "":
-            return True
-        phase_deadline = self.ledger.deadline() if deadline is None else float(deadline)
-        clock = self.run.boundaries.clock
-        if clock() >= phase_deadline:
-            return self._refuse_authority_observation(moment)
-        self.authority_observation_refused = ""
-        reasons: list[str] = []
-        coordinator = self.run.boundaries.campaign_coordinator
-        if coordinator is not None and self.claim is not None:
-            try:
-                reasons.extend(coordinator.verify(self.claim) or ())
-            except Exception as exc:
-                reasons.append(f"campaign_claim:unverifiable:{type(exc).__name__}")
-        lifecycle = self.run.boundaries.diagnostic_lifecycle
-        if (
-            not reasons
-            and callable(lifecycle)
-            and self.run.diagnostic_lifecycle is not None
-        ):
-            if clock() >= phase_deadline:
-                return self._refuse_authority_observation(moment)
-            observed = self.observe_lifecycle(lifecycle, phase_deadline)
-            reasons.extend(
-                item
-                for item in diagnostic_lifecycle_continuity(
-                    self.run.diagnostic_lifecycle, observed
-                )
-                # A mailbox that still holds artifacts mid-run is this run's
-                # own traffic in flight, not a second instance. Only identity
-                # decides authority here; drainage is a finalization fact.
-                if not item.startswith("mailbox:")
-            )
-        if not reasons:
-            return True
-        self.authority_lost = bounded(f"{moment}:{reasons[0]}")
-        record = self.record
-        record.engine_residue.extend(reasons)
-        record.secondary_failures.extend(f"authority:{item}" for item in reasons)
-        record.limitations.append(f"execution_authority_lost_before:{bounded(moment)}")
-        self.stop(f"execution_authority_lost:{reasons[0]}")
-        return False
-
-    def _refuse_authority_observation(self, moment: str) -> bool:
-        """Record that this phase had no time to observe local authority."""
-        refusal = f"{bounded(moment)}:time_budget_exhausted"
-        self.authority_observation_refused = refusal
-        failure = f"authority_observation_not_admitted:{refusal}"
-        if failure not in self.record.secondary_failures:
-            self.record.secondary_failures.append(failure)
-        limitation = f"local_authority_observation_not_admitted:{refusal}"
-        if limitation not in self.record.limitations:
-            self.record.limitations.append(limitation)
-        return False
+        return self.authority.live(
+            moment,
+            (lambda: self.ledger.deadline())
+            if deadline is None
+            else (lambda: float(deadline)),
+            self.stop,
+        )
 
     def observe_lifecycle(
         self,
@@ -258,24 +200,7 @@ class Execution:
         deadline: float,
     ) -> DiagnosticLifecycleObservation:
         """Read and charge one local pairing under an absolute deadline."""
-        clock = self.run.boundaries.clock
-        started = clock()
-        try:
-            observed = lifecycle(deadline)
-        except Exception as exc:
-            observed = DiagnosticLifecycleObservation(
-                error=f"diagnostic_lifecycle_failed:{type(exc).__name__}"
-            )
-        finished = clock()
-        self.local_observation_seconds += max(0.0, finished - started)
-        self.record.budget.local_observation_seconds = round(
-            self.local_observation_seconds, 3
-        )
-        if finished > deadline and not observed.error:
-            return DiagnosticLifecycleObservation(
-                error="local_observation_deadline_exceeded:lifecycle"
-            )
-        return observed
+        return self.authority.observe_lifecycle(lifecycle, deadline)
 
     def effect_guard(self, purpose: str, deadline: float) -> str:
         """Return why this one effect may not be dispatched, or "".
@@ -295,8 +220,8 @@ class Execution:
         if self.live_authority(f"effect:{purpose}" if purpose else "effect", deadline):
             return ""
         return (
-            self.authority_lost
-            or self.authority_observation_refused
+            self.authority.lost
+            or self.authority.observation_refused
             or "execution_authority_lost"
         )
 
@@ -343,7 +268,7 @@ class Execution:
     def begin(self, ids: Sequence[str], procedure: str) -> bool:
         """Decide whether one procedure may start, and announce it durably."""
         if not self.live_authority(f"experiment:{procedure}"):
-            reason = self.authority_lost or self.authority_observation_refused
+            reason = self.authority.lost or self.authority.observation_refused
             self.not_run(ids, f"execution_authority_unavailable:{reason}")
             return False
         return self.admissible(ids, procedure) and self.announce(ids, procedure)
@@ -375,10 +300,10 @@ class Execution:
         if not all(item.terminal_observation for item in specs):
             return self.begin(ids, procedure)
         if not self.live_authority(f"terminal:{procedure}"):
-            if self.authority_observation_refused:
+            if self.authority.observation_refused:
                 self.not_observed(ids, "time_budget_exhausted")
             else:
-                self.not_observed(ids, f"authority_lost:{self.authority_lost}")
+                self.not_observed(ids, f"authority_lost:{self.authority.lost}")
             return False
         reason = self._unmet(specs)
         if reason:

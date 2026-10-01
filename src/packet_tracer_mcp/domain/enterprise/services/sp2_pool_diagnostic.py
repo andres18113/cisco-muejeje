@@ -490,3 +490,18 @@ def assess_sp2_remote_samples(
             "native_capacity_not_established",
         ],
     )
+
+
+def sp2_remote_acquired(reading: ClientReading) -> bool:
+    """Whether one relayed client reading shows an acquired address.
+
+    No address and the all-zero address are no acquisition, and a link-local
+    fallback is a failed acquisition, not an address. Mode, attribution and
+    pool membership are separate observations this predicate claims nothing
+    about.
+    """
+    return bool(
+        reading.observed
+        and reading.ipv4 not in ("", "0.0.0.0")
+        and not reading.ipv4.startswith("169.254.")
+    )

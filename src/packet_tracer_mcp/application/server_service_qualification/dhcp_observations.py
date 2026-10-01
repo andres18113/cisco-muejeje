@@ -47,6 +47,7 @@ from .contracts import Q3ProductContract, bounded
 from .execution import Execution
 from .operation_budget import OperationRefused, counted_seq
 
+#: The ledger purpose prefix every native default reading is dispatched under.
 Q3_DEFAULT_PURPOSE = "q3:native_default"
 #: The same reading under the D-DHCP diagnostic, so a record can never confuse
 #: a Q3 sample with a diagnostic one by its purpose alone.

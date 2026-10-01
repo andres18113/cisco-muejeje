@@ -2,7 +2,9 @@
 
 Exact-inventory runtime adapters, E5/E6 projections of a product contract,
 the runtime context, the foundations a projection established, the rows an
-application reported and the bounds of a terminal router capture.
+application reported, the product invocation the product workflows share
+(the exact manifest store, the fresh public binding and the private
+candidate path) and the bounded terminal router capture.
 """
 
 from __future__ import annotations
@@ -25,24 +27,32 @@ from ...domain.enterprise.models.configuration_runtime import (
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
 )
+from ...domain.enterprise.models.deployment import DeploymentManifest
+from ...domain.enterprise.models.service_entry import ServiceStageResult
 from ...domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
     EnableServerDhcp,
     ServicePlan,
     ServiceVerificationKind,
 )
+from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
 from ...domain.enterprise.models.service_runtime import RuntimeServiceVerification
 from ...domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
 from ..use_cases.apply_configuration import ConfigurationRuntime
+from ..use_cases.apply_enterprise_services import (
+    ServiceInvocationBinding,
+    ServiceStageRuntimes,
+    TransportSelection,
+    apply_enterprise_services,
+)
 from ..use_cases.apply_services import ServiceRuntime
 from ..use_cases.foundational_evidence import derive_service_foundational_statuses
 from ..use_cases.service_access_readiness_gate import ReadinessNotRequired
 from .contracts import Q3ProductContract
 from .execution import Execution
 
-#: The ledger purpose prefix every native default reading is dispatched under.
 #: Why the qualification stages run no product readiness gate. They take their
 #: own exact-port/VLAN forwarding evidence, keep it in their immutable records
 #: with its own admission dimensions, and are budgeted for precisely the
@@ -277,3 +287,175 @@ def application_rows(result: Any) -> dict[str, Any]:
             item.model_dump(mode="json") for item in result.verification_results
         ],
     }
+
+
+class ExactManifestStore:
+    """A manifest store that answers for exactly one deployment's manifest."""
+
+    def __init__(self, manifest: DeploymentManifest) -> None:
+        """Hold the one manifest this store answers for."""
+        self._manifest = manifest
+
+    def latest_by_deployment_id(self, identifier: str) -> DeploymentManifest | None:
+        """Return the manifest when `identifier` is its deployment, else None."""
+        return self._manifest if identifier == self._manifest.deployment_id else None
+
+
+def product_stage_runtimes(
+    execution: Execution, contract: Q3ProductContract, *, routed: bool
+) -> ServiceStageRuntimes:
+    """Bind the composed product runtimes to the contract's exact inventory.
+
+    `routed` adds the trunk-continuity and routed-forwarding observers that
+    the product's routed readiness groups find on its E5 runtime.
+    """
+    inner = execution.run.boundaries.native_product_runtimes(
+        execution.bound, contract.inventory
+    )
+    configuration = (
+        RoutedInventoryConfigurationRuntime
+        if routed
+        else ExactInventoryConfigurationRuntime
+    )
+    return ServiceStageRuntimes(
+        configuration=configuration(inner.configuration, contract.inventory),
+        services=ExactInventoryServiceRuntime(inner.services, contract.inventory),
+    )
+
+
+def source_tree_identity(execution: Execution) -> SourceTreeIdentity:
+    """Return the executed source identity a product record must name."""
+    source = execution.record.source
+    return SourceTreeIdentity(
+        sha=source.executed_sha,
+        tree=source.executed_tree,
+        dirty=source.clean is not True,
+    )
+
+
+@dataclass
+class FreshPublicBinding:
+    """Bind the registered four-input product entry to a freshly read build.
+
+    The entry calls it when it binds. It reads the executable build again
+    through the counted transport and refuses a build that is not the one
+    this qualification admitted; `fresh_build` keeps the build it read.
+    """
+
+    execution: Execution
+    contract: Q3ProductContract
+    runtimes: ServiceStageRuntimes
+    #: The refusal raised when the fresh build is unobserved or different.
+    mismatch: str
+    #: Whether the contract's device capability catalog is bound as well.
+    bind_device_catalog: bool = False
+    fresh_build: str = ""
+
+    def __call__(self) -> ServiceInvocationBinding:
+        """Read the build again and return the binding for exactly that build."""
+        execution = self.execution
+        boundaries = execution.run.boundaries
+        reading = boundaries.build_reader(execution.bound.send_and_wait).read()
+        if (
+            not reading.available
+            or reading.version != execution.record.environment.observed_build
+        ):
+            raise ValueError(self.mismatch)
+        self.fresh_build = reading.version
+        catalog = (
+            {"device_capability_catalog": self.contract.device_capability_catalog}
+            if self.bind_device_catalog
+            else {}
+        )
+        return ServiceInvocationBinding(
+            runtimes=self.runtimes,
+            record_store=boundaries.native_product_record_store_factory(),
+            environment_fingerprint=(
+                self.contract.manifest.environment_fingerprint.model_copy(
+                    update={"backend_version": reading.version}
+                )
+            ),
+            transport_selection=TransportSelection(
+                channel=execution.channel, fixed_at=boundaries.now()
+            ),
+            source_tree=source_tree_identity(execution),
+            endpoint_observer=boundaries.native_product_endpoint_observer(
+                execution.bound
+            ),
+            **catalog,
+        )
+
+
+def apply_private_product(
+    execution: Execution,
+    contract: Q3ProductContract,
+    runtimes: ServiceStageRuntimes,
+    *,
+    run_label: str,
+    bind_device_catalog: bool = False,
+) -> ServiceStageResult:
+    """Run the private-candidate product path on this contract's exact inputs.
+
+    The manifest store knows only this contract's deployment, the service
+    capability catalog answers only for the observed build, and the product
+    run is named after this qualification run.
+    """
+    boundaries = execution.run.boundaries
+    observed_build = execution.record.environment.observed_build
+    catalog = (
+        {"device_capability_catalog": contract.device_capability_catalog}
+        if bind_device_catalog
+        else {}
+    )
+    return apply_enterprise_services(
+        contract.intent_json,
+        deployment_id=contract.manifest.deployment_id,
+        packet_tracer_version=observed_build,
+        import_preflight=boundaries.native_product_import_preflight(),
+        manifest_store=ExactManifestStore(contract.manifest),
+        runtimes=runtimes,
+        record_store=boundaries.native_product_record_store_factory(),
+        environment_fingerprint=contract.manifest.environment_fingerprint,
+        transport_selection=TransportSelection(
+            channel=execution.channel, fixed_at=boundaries.now()
+        ),
+        endpoint_observer=boundaries.native_product_endpoint_observer(execution.bound),
+        capability_catalog=lambda build: (
+            contract.service_capabilities if build == observed_build else {}
+        ),
+        source_tree=source_tree_identity(execution),
+        run_label=run_label,
+        run_id=execution.record.run_id + "-product",
+        **catalog,
+    )
+
+
+def capture_terminal_routers(
+    execution: Execution,
+    contract: Q3ProductContract,
+    routers: tuple[str, ...],
+    purpose: str,
+) -> tuple[list[Any], bool]:
+    """Capture each router's terminal text through the composed product reader.
+
+    Returns the rows and whether the reader offers a capture at all. Without
+    one nothing is read and the rows are empty; the capture is bounded by the
+    shared per-read call budget and one window for the whole capture.
+    """
+    reader = execution.run.boundaries.native_product_runtimes(
+        execution.bound, contract.inventory
+    ).configuration
+    capture = getattr(reader, "capture_routed_text", None)
+    with execution.ledger.purpose_of(purpose):
+        rows = (
+            list(
+                capture(
+                    routers,
+                    sample_calls=SP1_CAPTURE_SAMPLE_CALLS,
+                    deadline_seconds=SP1_CAPTURE_DEADLINE_SECONDS,
+                )
+            )
+            if callable(capture)
+            else []
+        )
+    return rows, callable(capture)

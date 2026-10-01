@@ -1,20 +1,33 @@
-"""SP-2: the private routed named-pool discriminator through one relay."""
+"""SP-2: the private routed named-pool discriminator through one relay.
+
+The product application runs as ordered phases over one application state:
+selection, the pre-client E5 projection, the disabled baseline, the routed
+readiness, the mode-first preconditions and client mode, the E6 pool and
+enable, the passive acquisition wait and the two separated samples. The first
+phase that names a cause stops the application with the budget refusal, when
+one caused it, attributed first.
+"""
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from ....domain.enterprise.models.configuration import (
     SetEndpointDhcp,
     SetEndpointStaticAddress,
 )
-from ....domain.enterprise.models.configuration_runtime import ActionExecutionStatus
+from ....domain.enterprise.models.configuration_runtime import (
+    ActionExecutionStatus,
+    ConfigurationRuntimeContext,
+)
 from ....domain.enterprise.models.deployment import deployment_manifest_semantic_hash
 from ....domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
     ServiceType,
+    ServiceVerificationExpectation,
     ServiceVerificationKind,
 )
 from ....domain.enterprise.models.service_qualification import (
@@ -48,7 +61,7 @@ from ....domain.enterprise.services.service_access_readiness import (
     DHCP_ACQUISITION_KINDS,
     derive_access_readiness_plan,
 )
-from ....domain.enterprise.services.service_compiler import ServiceCompiler
+from ....domain.enterprise.services.service_compiler import service_plan_semantic_hash
 from ....domain.enterprise.services.service_diagnostic_profiles import (
     d_dhcp_enable_only_plan,
     d_dhcp_pool_only_plan,
@@ -56,12 +69,15 @@ from ....domain.enterprise.services.service_diagnostic_profiles import (
     sp2_preclient_configuration_plan,
 )
 from ....domain.enterprise.services.service_qualification_evidence import Assessment
-from ....domain.enterprise.services.sp2_pool_diagnostic import assess_sp2_remote_samples
+from ....domain.enterprise.services.sp2_pool_diagnostic import (
+    assess_sp2_remote_samples,
+    sp2_remote_acquired,
+)
 from ....domain.enterprise.services.topology_identity import compute_topology_hashes
 from ...use_cases.apply_configuration import ConfigurationApplicator
-from ...use_cases.apply_enterprise_services import _dhcp_prelease_paths, _path_admission
 from ...use_cases.apply_services import ServiceApplicator
 from ...use_cases.service_access_readiness_gate import ServiceAccessReadinessGate
+from ...use_cases.service_path_admission import dhcp_prelease_paths, path_admission
 from ..contracts import Q3ProductContract
 from ..dhcp_observations import read_client_binding
 from ..execution import Execution
@@ -69,13 +85,13 @@ from ..fixtures import diagnostic_start
 from ..operation_budget import LedgerPhase, OperationRefused
 from ..product_support import (
     DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
-    SP1_CAPTURE_DEADLINE_SECONDS,
-    SP1_CAPTURE_SAMPLE_CALLS,
     ExactInventoryServiceRuntime,
     RoutedInventoryConfigurationRuntime,
     application_rows,
     capability_digest,
+    capture_terminal_routers,
     product_runtime_context,
+    product_stage_runtimes,
     projection_foundations,
 )
 
@@ -133,8 +149,23 @@ SP2_REMOTE_REQUIRED_DEVICE_EVIDENCE = (
 def _sp2_remote_contract_mismatch(
     execution: Execution, contract: Q3ProductContract
 ) -> str:
-    """Bind a private candidate to this exact stage and composed plan."""
-    definition = execution.definition
+    """Bind a private candidate to this exact stage and composed plan.
+
+    The checks run in order and the first cause wins: the reviewed intent,
+    hashes and build, the pinned capability snapshot and candidate catalog,
+    the fixture binding, and the one selected DHCP service with its relay
+    candidate provenance.
+    """
+    return (
+        _remote_identity_mismatch(execution, contract)
+        or _remote_capability_mismatch(contract)
+        or _remote_fixture_mismatch(execution, contract)
+        or _remote_service_mismatch(execution, contract)
+    )
+
+
+def _remote_identity_mismatch(execution: Execution, contract: Q3ProductContract) -> str:
+    """Bind the intent, plans, manifest and build to the reviewed values."""
     if (
         not contract.intent_json
         or hashlib.sha256(contract.intent_json.encode()).hexdigest()
@@ -159,7 +190,7 @@ def _sp2_remote_contract_mismatch(
         or configuration_plan_semantic_hash(contract.configuration_plan)
         != SP2_REMOTE_CONFIGURATION_SHA256
         or contract.service_plan.semantic_hash != SP2_REMOTE_SERVICES_SHA256
-        or ServiceCompiler._semantic_hash(contract.service_plan)
+        or service_plan_semantic_hash(contract.service_plan)
         != SP2_REMOTE_SERVICES_SHA256
         or contract.configuration_plan.source_topology_hash
         != SP2_REMOTE_TOPOLOGY_SHA256
@@ -177,6 +208,11 @@ def _sp2_remote_contract_mismatch(
     ):
         return "sp2_remote_build_or_backend_changed"
 
+    return ""
+
+
+def _remote_capability_mismatch(contract: Q3ProductContract) -> str:
+    """Bind the capability snapshot and candidate catalog to the reviewed rows."""
     models = {"1941", "IE-2000", "PC-PT", "Server-PT"}
     if set(contract.device_capabilities) != models:
         return "sp2_remote_capability_snapshot_changed"
@@ -219,6 +255,12 @@ def _sp2_remote_contract_mismatch(
                 return "sp2_remote_required_capability_evidence_changed"
     except (AttributeError, KeyError, TypeError, ValueError):
         return "sp2_remote_capability_snapshot_unreadable"
+    return ""
+
+
+def _remote_fixture_mismatch(execution: Execution, contract: Q3ProductContract) -> str:
+    """Bind the contract's devices, links and inventory to the stage fixture."""
+    definition = execution.definition
     if {(item.name, item.model) for item in contract.topology.devices} != {
         (item.name, item.model) for item in definition.fixtures
     }:
@@ -245,6 +287,12 @@ def _sp2_remote_contract_mismatch(
         for item in definition.fixtures
     }:
         return "sp2_remote_inventory_changed"
+    return ""
+
+
+def _remote_service_mismatch(execution: Execution, contract: Q3ProductContract) -> str:
+    """Require the one selected DHCP service and the relay's candidate provenance."""
+    definition = execution.definition
     if len(contract.service_plan.services) != 1:
         return "sp2_remote_service_count_changed"
     [service] = contract.service_plan.services
@@ -457,6 +505,61 @@ def _sp2_remote_client(execution: Execution, label: str) -> ClientReading:
     )
 
 
+@dataclass
+class _RemoteApplication:
+    """One private remote-relay product application and the facts it records.
+
+    Each phase below reads and extends it, and returns the cause that stops
+    the application, or "". `facts` is the one dict every assessment of this
+    application carries, whichever phase ends it.
+    """
+
+    execution: Execution
+    contract: Q3ProductContract
+    facts: dict[str, Any]
+    configuration_runtime: RoutedInventoryConfigurationRuntime
+    service_runtime: ExactInventoryServiceRuntime
+    context: ConfigurationRuntimeContext
+    pool: ConfigureServerDhcpPool | None = None
+    lease_expectation: ServiceVerificationExpectation | None = None
+    foundations: dict[str, ActionExecutionStatus] = field(default_factory=dict)
+    readings: list[ClientReading] = field(default_factory=list)
+    bindings: list[Mapping[str, object]] = field(default_factory=list)
+    named_scans: list[LeaseScan] = field(default_factory=list)
+    default_scans: list[LeaseScan] = field(default_factory=list)
+
+    def budget_cause(self) -> str:
+        """Name the first experiment call the ceiling refused, or ""."""
+        denied = next(
+            (
+                row.refused
+                for row in self.execution.ledger.entries
+                if row.phase == LedgerPhase.EXPERIMENT.value
+                and row.refused
+                in {"operation_budget_exhausted", "time_budget_exhausted"}
+            ),
+            "",
+        )
+        return f"budget:sp2_remote_product:{denied}" if denied else ""
+
+    def stopped(self, reason: str) -> Assessment:
+        """Stop the run on `reason`, or on the budget refusal that caused it."""
+        budget = self.budget_cause()
+        if budget and reason != budget:
+            self.facts["downstream_stop_cause"] = reason
+        effective = budget or reason
+        self.execution.stop(effective)
+        return Assessment(
+            MeasurementConclusion.INCONCLUSIVE,
+            facts=self.facts,
+            causes=[effective] if effective == reason else [effective, reason],
+            limitations=[
+                "private_candidate_not_public_support",
+                "packet_giaddr_not_observed",
+            ],
+        )
+
+
 def _sp2_remote_product(
     execution: Execution, contract: Q3ProductContract
 ) -> Assessment:
@@ -471,43 +574,52 @@ def _sp2_remote_product(
         "service_capabilities_sha256": capability_digest(contract.service_capabilities),
         "samples": [],
     }
-
-    def budget_cause() -> str:
-        denied = next(
-            (
-                row.refused
-                for row in execution.ledger.entries
-                if row.phase == LedgerPhase.EXPERIMENT.value
-                and row.refused
-                in {"operation_budget_exhausted", "time_budget_exhausted"}
-            ),
-            "",
-        )
-        return f"budget:sp2_remote_product:{denied}" if denied else ""
-
-    def stopped(reason: str) -> Assessment:
-        budget = budget_cause()
-        if budget and reason != budget:
-            facts["downstream_stop_cause"] = reason
-        effective = budget or reason
-        execution.stop(effective)
-        return Assessment(
-            MeasurementConclusion.INCONCLUSIVE,
-            facts=facts,
-            causes=[effective] if effective == reason else [effective, reason],
-            limitations=[
-                "private_candidate_not_public_support",
-                "packet_giaddr_not_observed",
-            ],
-        )
-
-    boundaries = execution.run.boundaries
-    inner = boundaries.native_product_runtimes(execution.bound, contract.inventory)
-    configuration_runtime = RoutedInventoryConfigurationRuntime(
-        inner.configuration, contract.inventory
+    runtimes = product_stage_runtimes(execution, contract, routed=True)
+    application = _RemoteApplication(
+        execution=execution,
+        contract=contract,
+        facts=facts,
+        configuration_runtime=runtimes.configuration,
+        service_runtime=runtimes.services,
+        context=product_runtime_context(contract),
     )
-    service_runtime = ExactInventoryServiceRuntime(inner.services, contract.inventory)
-    context = product_runtime_context(contract)
+    for phase in (
+        _remote_selection,
+        _remote_preclient,
+        _remote_disabled_baseline,
+        _remote_readiness,
+        _remote_mode_preconditions,
+        _remote_client_mode,
+        _remote_apply_e6,
+        _remote_acquisition,
+        _remote_samples,
+    ):
+        cause = phase(application)
+        if cause:
+            return application.stopped(cause)
+    if denied := application.budget_cause():
+        return application.stopped(denied)
+    pool = application.pool
+    assert pool is not None
+    assessment = assess_sp2_remote_samples(
+        application.readings,
+        application.bindings,
+        application.named_scans,
+        application.default_scans,
+        named_range=AddressRange(pool.lease_start, pool.lease_end),
+        expected_mask=pool.netmask,
+        expected_gateway=pool.gateway,
+        expected_dns=pool.dns_server,
+        expected_capacity=pool.max_users,
+    )
+    assessment.facts.update(facts)
+    assessment.limitations.append("private_candidate_not_public_support")
+    return assessment
+
+
+def _remote_selection(application: _RemoteApplication) -> str:
+    """Bind exactly one planned pool and the selected client's one lease check."""
+    contract = application.contract
     pool_actions = [
         item
         for item in contract.service_plan.actions
@@ -520,9 +632,17 @@ def _sp2_remote_product(
         and item.client_device_name == SP2_REMOTE_CLIENT
     ]
     if len(pool_actions) != 1 or len(lease_expectations) != 1:
-        return stopped("sp2_remote_pool_or_lease_selection_not_exact")
-    [pool] = pool_actions
-    [lease_expectation] = lease_expectations
+        return "sp2_remote_pool_or_lease_selection_not_exact"
+    [application.pool] = pool_actions
+    [application.lease_expectation] = lease_expectations
+    return ""
+
+
+def _remote_preclient(application: _RemoteApplication) -> str:
+    """Apply the pre-client E5 projection and prove the relay helper read back."""
+    execution = application.execution
+    contract = application.contract
+    facts = application.facts
     preclient, rewrites = sp2_preclient_configuration_plan(contract.configuration_plan)
     facts["preclient_projection"] = {
         "id": preclient.id,
@@ -532,24 +652,25 @@ def _sp2_remote_product(
     if len(preclient.actions) != 18 or any(
         isinstance(item, SetEndpointDhcp) for item in preclient.actions
     ):
-        return stopped("sp2_remote_preclient_projection_not_exact")
+        return "sp2_remote_preclient_projection_not_exact"
     if not execution.run.transition("experiment:SP2_REMOTE:e5_preclient"):
-        return stopped("persistence:sp2_remote_e5_not_announced")
+        return "persistence:sp2_remote_e5_not_announced"
     with execution.ledger.effect_of("sp2:remote:product:e5_preclient"):
-        e5 = ConfigurationApplicator(configuration_runtime).apply(
+        e5 = ConfigurationApplicator(application.configuration_runtime).apply(
             preclient,
             actual_source_topology_hash=contract.manifest.physical_topology_hash,
             capabilities=contract.device_capabilities,
-            runtime_context=context,
+            runtime_context=application.context,
             deployment_manifest=contract.manifest,
         )
     facts["e5_preclient"] = application_rows(e5)
     foundations = projection_foundations(contract, preclient, e5)
+    application.foundations = foundations
     cause = e5_foundation_cause(
         e5, foundations, {item.id for item in preclient.actions}
     )
     if cause:
-        return stopped(cause)
+        return cause
     helper = [
         item
         for item in preclient.actions
@@ -559,16 +680,23 @@ def _sp2_remote_product(
         item.action_id == helper[0].id and item.status is ActionExecutionStatus.VERIFIED
         for item in e5.verification_results
     ):
-        return stopped("sp2_remote_helper_readback_unverified")
+        return "sp2_remote_helper_readback_unverified"
     facts["foundations"] = {key: value.value for key, value in foundations.items()}
+    return ""
+
+
+def _remote_disabled_baseline(application: _RemoteApplication) -> str:
+    """Prove the process disabled with only its stock pool, and the PC unbound."""
+    execution = application.execution
+    facts = application.facts
     baseline = _sp2_remote_snapshot(execution, "after_e5")
     facts["after_e5"] = baseline
     if not baseline["observed"] or baseline["raw"].get("enabled") is not False:
-        return stopped("sp2_remote_process_not_proven_disabled")
+        return "sp2_remote_process_not_proven_disabled"
     if baseline["raw"].get("pool_count") != 1 or [
         row.get("name") for row in baseline["raw"].get("pools", [])
     ] != ["serverPool"]:
-        return stopped("sp2_remote_initial_pool_set_not_exact")
+        return "sp2_remote_initial_pool_set_not_exact"
     before = _sp2_remote_client(execution, "before_pool")
     facts["before_client"] = before.__dict__
     if (
@@ -576,9 +704,18 @@ def _sp2_remote_product(
         or before.mode is not False
         or before.ipv4 not in ("", "0.0.0.0")
     ):
-        return stopped("sp2_remote_client_not_unbound")
+        return "sp2_remote_client_not_unbound"
+    return ""
 
-    unsupported, paths = _path_admission(
+
+def _remote_readiness(application: _RemoteApplication) -> str:
+    """Admit the one routed path and the pre-lease access and routed readiness."""
+    execution = application.execution
+    contract = application.contract
+    facts = application.facts
+    lease_expectation = application.lease_expectation
+    assert lease_expectation is not None
+    unsupported, paths = path_admission(
         contract.configuration_plan,
         contract.service_plan,
         contract.service_plan.services,
@@ -586,20 +723,20 @@ def _sp2_remote_product(
     )
     facts["path_refusals"] = unsupported
     if unsupported or len(paths) != 1:
-        return stopped("sp2_remote_path_not_admitted")
+        return "sp2_remote_path_not_admitted"
     readiness = derive_access_readiness_plan(
         configuration_actions=contract.configuration_plan.actions,
         verification_expectations=contract.service_plan.verification_expectations,
         request_kinds=DHCP_ACQUISITION_KINDS,
-        routed_paths=_dhcp_prelease_paths(paths, contract.service_plan.services),
+        routed_paths=dhcp_prelease_paths(paths, contract.service_plan.services),
     )
     gate = ServiceAccessReadinessGate(
         readiness,
-        configuration_runtime,
+        application.configuration_runtime,
         clock=execution.bound.clock,
         device_names={item.id: item.name for item in contract.topology.devices},
-        continuity_observer=configuration_runtime,
-        routed_observer=configuration_runtime,
+        continuity_observer=application.configuration_runtime,
+        routed_observer=application.configuration_runtime,
     )
     gate.begin_invocation()
     with execution.ledger.purpose_of("sp2:remote:prelease_readiness"):
@@ -610,63 +747,21 @@ def _sp2_remote_product(
         "unplaced": [item.expectation_id for item in readiness.unplaced],
     }
     if verdict is None or not verdict.admitted or readiness.unplaced:
-        return stopped("sp2_remote_access_or_routed_readiness_refused")
+        return "sp2_remote_access_or_routed_readiness_refused"
+    return ""
 
-    def apply_e6() -> str:
-        """Write and read the named pool, then enable and read the process."""
-        for name, projection, enabled in (
-            ("pool", d_dhcp_pool_only_plan, False),
-            ("enable", d_dhcp_enable_only_plan, True),
-        ):
-            plan, changes = projection(
-                contract.service_plan,
-                executed_configuration_action_ids=frozenset(foundations),
-            )
-            facts[f"e6_{name}_projection"] = {
-                "id": plan.id,
-                "semantic_hash": plan.semantic_hash,
-                "rewrites": [item.as_text() for item in changes],
-            }
-            if len(plan.actions) != 1 or len(plan.verification_expectations) != 1:
-                return f"sp2_remote_{name}_projection_not_exact"
-            if not execution.run.transition(f"experiment:SP2_REMOTE:e6_{name}"):
-                return f"persistence:sp2_remote_e6_{name}_not_announced"
-            with execution.ledger.effect_of(f"sp2:remote:product:e6_{name}"):
-                e6 = ServiceApplicator(service_runtime).apply(
-                    plan,
-                    actual_source_topology_hash=contract.manifest.physical_topology_hash,
-                    actual_source_configuration_hash=contract.service_plan.source_configuration_hash,
-                    foundational_statuses=foundations,
-                    capabilities=contract.service_capabilities,
-                    runtime_context=context,
-                    deployment_manifest=contract.manifest,
-                    operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
-                )
-            facts[f"e6_{name}"] = application_rows(e6)
-            cause = service_result_cause(
-                e6,
-                {item.id for item in plan.actions},
-                expected_verification_ids={
-                    item.id for item in plan.verification_expectations
-                },
-            ) or readback_not_observed_cause(e6)
-            if cause:
-                return cause
-            snapshot = _sp2_remote_snapshot(execution, f"after_{name}")
-            facts[f"after_{name}"] = snapshot
-            cause = _sp2_remote_physical_policy(snapshot, pool, enabled)
-            if cause:
-                return cause
-            scan = _sp2_remote_scan(execution, f"after_{name}")
-            facts[f"after_{name}_scan"] = {
-                key: value.as_facts() for key, value in scan.items()
-            }
-        return ""
 
-    # Profile v3 (after e5): the product order. The selected PC enters DHCP
-    # mode while the process is still disabled and the named pool absent;
-    # the pool is then written and the process enabled. Only serverPool can
-    # be read before the pool exists.
+def _remote_mode_preconditions(application: _RemoteApplication) -> str:
+    """Observe the mode-first state: PC unbound, named pool absent, server hop.
+
+    Profile v3 (after e5) follows the product order. The selected PC enters
+    DHCP mode while the process is still disabled and the named pool absent;
+    the pool is then written and the process enabled. Only serverPool can be
+    read before the pool exists.
+    """
+    execution = application.execution
+    contract = application.contract
+    facts = application.facts
     before_mode = _sp2_remote_client(execution, "before_mode")
     facts["before_mode"] = before_mode.__dict__
     if (
@@ -674,7 +769,7 @@ def _sp2_remote_product(
         or before_mode.mode is not False
         or before_mode.ipv4 not in ("", "0.0.0.0")
     ):
-        return stopped("sp2_remote_client_prebound_before_mode")
+        return "sp2_remote_client_prebound_before_mode"
     prelease = _sp2_remote_scan(execution, "before_mode")
     facts["before_mode_scan"] = {
         key: value.as_facts() for key, value in prelease.items()
@@ -687,16 +782,16 @@ def _sp2_remote_product(
         or named_before is None
         or not named_before.observed
     ):
-        return stopped("sp2_remote_pre_mode_pool_unobserved")
+        return "sp2_remote_pre_mode_pool_unobserved"
     # The named pool must be read absent: mode-first is an observed state.
     if named_before.termination != TERMINATION_POOL_ABSENT or named_before.rows:
-        return stopped("sp2_remote_named_pool_present_before_mode")
+        return "sp2_remote_named_pool_present_before_mode"
     if any(
         scan.rows_with_normalized_mac(before_mode.mac)
         for scan in prelease.values()
         if scan.observed
     ):
-        return stopped("sp2_remote_preexisting_client_lease")
+        return "sp2_remote_preexisting_client_lease"
     planned_server = next(
         (
             item
@@ -710,28 +805,36 @@ def _sp2_remote_product(
         execution, SP2_REMOTE_SERVER, "server_before_mode"
     )
     facts["server_binding"] = dict(server_binding)
-    cause = _sp2_remote_server_gateway_cause(server_binding, planned_server)
-    if cause:
-        return stopped(cause)
+    return _sp2_remote_server_gateway_cause(server_binding, planned_server)
+
+
+def _remote_client_mode(application: _RemoteApplication) -> str:
+    """Put the selected PC in DHCP mode, then re-read both sides before the pool.
+
+    E6 then runs with the verified mode foundation, ID and status together.
+    """
+    execution = application.execution
+    contract = application.contract
+    facts = application.facts
     mode_plan = q3_fastloop_client_mode_plan(
         contract.configuration_plan, device_names=(SP2_REMOTE_CLIENT,)
     )
     if len(mode_plan.actions) != 1 or not isinstance(
         mode_plan.actions[0], SetEndpointDhcp
     ):
-        return stopped("sp2_remote_mode_projection_not_exact")
+        return "sp2_remote_mode_projection_not_exact"
     facts["mode_projection"] = {
         "id": mode_plan.id,
         "semantic_hash": mode_plan.semantic_hash,
     }
     if not execution.run.transition("experiment:SP2_REMOTE:e5_client_mode"):
-        return stopped("persistence:sp2_remote_mode_not_announced")
+        return "persistence:sp2_remote_mode_not_announced"
     with execution.ledger.effect_of("sp2:remote:product:e5_client_mode"):
-        mode_result = ConfigurationApplicator(configuration_runtime).apply(
+        mode_result = ConfigurationApplicator(application.configuration_runtime).apply(
             mode_plan,
             actual_source_topology_hash=contract.manifest.physical_topology_hash,
             capabilities=contract.device_capabilities,
-            runtime_context=context,
+            runtime_context=application.context,
             deployment_manifest=contract.manifest,
         )
     facts["e5_client_mode"] = application_rows(mode_result)
@@ -740,7 +843,7 @@ def _sp2_remote_product(
         mode_result, mode_foundations, {item.id for item in mode_plan.actions}
     )
     if cause:
-        return stopped(cause)
+        return cause
     # Before the pool write, re-read both sides: the client in DHCP mode and
     # unbound, the process still disabled with only its stock pool.
     after_mode = _sp2_remote_client(execution, "after_mode_before_pool")
@@ -750,7 +853,7 @@ def _sp2_remote_product(
         or after_mode.mode is not True
         or after_mode.ipv4 not in ("", "0.0.0.0")
     ):
-        return stopped("sp2_remote_client_state_changed_before_pool")
+        return "sp2_remote_client_state_changed_before_pool"
     server_before_pool = _sp2_remote_snapshot(execution, "after_mode_before_pool")
     facts["server_after_mode_before_pool"] = server_before_pool
     if (
@@ -759,20 +862,82 @@ def _sp2_remote_product(
         or [row.get("name") for row in server_before_pool["raw"].get("pools", [])]
         != ["serverPool"]
     ):
-        return stopped("sp2_remote_server_state_changed_before_pool")
-    # E6 runs with the verified mode foundation, ID and status together.
-    foundations = {**foundations, **mode_foundations}
-    cause = apply_e6()
-    if cause:
-        return stopped(cause)
-    # Passive, bounded wait for the relayed acquisition: client reads only,
-    # no request, ping or dhcpRun. The two separated samples follow either
-    # way, so an address that never appears stays a retained finding.
+        return "sp2_remote_server_state_changed_before_pool"
+    application.foundations = {**application.foundations, **mode_foundations}
+    return ""
+
+
+def _remote_apply_e6(application: _RemoteApplication) -> str:
+    """Write and read the named pool, then enable and read the process."""
+    execution = application.execution
+    contract = application.contract
+    facts = application.facts
+    pool = application.pool
+    assert pool is not None
+    for name, projection, enabled in (
+        ("pool", d_dhcp_pool_only_plan, False),
+        ("enable", d_dhcp_enable_only_plan, True),
+    ):
+        plan, changes = projection(
+            contract.service_plan,
+            executed_configuration_action_ids=frozenset(application.foundations),
+        )
+        facts[f"e6_{name}_projection"] = {
+            "id": plan.id,
+            "semantic_hash": plan.semantic_hash,
+            "rewrites": [item.as_text() for item in changes],
+        }
+        if len(plan.actions) != 1 or len(plan.verification_expectations) != 1:
+            return f"sp2_remote_{name}_projection_not_exact"
+        if not execution.run.transition(f"experiment:SP2_REMOTE:e6_{name}"):
+            return f"persistence:sp2_remote_e6_{name}_not_announced"
+        with execution.ledger.effect_of(f"sp2:remote:product:e6_{name}"):
+            e6 = ServiceApplicator(application.service_runtime).apply(
+                plan,
+                actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                actual_source_configuration_hash=contract.service_plan.source_configuration_hash,
+                foundational_statuses=application.foundations,
+                capabilities=contract.service_capabilities,
+                runtime_context=application.context,
+                deployment_manifest=contract.manifest,
+                operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
+            )
+        facts[f"e6_{name}"] = application_rows(e6)
+        cause = service_result_cause(
+            e6,
+            {item.id for item in plan.actions},
+            expected_verification_ids={
+                item.id for item in plan.verification_expectations
+            },
+        ) or readback_not_observed_cause(e6)
+        if cause:
+            return cause
+        snapshot = _sp2_remote_snapshot(execution, f"after_{name}")
+        facts[f"after_{name}"] = snapshot
+        cause = _sp2_remote_physical_policy(snapshot, pool, enabled)
+        if cause:
+            return cause
+        scan = _sp2_remote_scan(execution, f"after_{name}")
+        facts[f"after_{name}_scan"] = {
+            key: value.as_facts() for key, value in scan.items()
+        }
+    return ""
+
+
+def _remote_acquisition(application: _RemoteApplication) -> str:
+    """Wait passively and boundedly for the relayed acquisition.
+
+    Client reads only: no request, ping or dhcpRun. The two separated samples
+    follow either way, so an address that never appears stays a retained
+    finding rather than a stop.
+    """
+    execution = application.execution
+    facts = application.facts
     polls: list[dict[str, object]] = []
     acquired = False
     for ordinal in range(1, SP2_REMOTE_ACQUISITION_MAX_POLLS + 1):
         waited = execution.ledger.wait(
-            SP2_REMOTE_ACQUISITION_POLL_SECONDS, boundaries.sleep
+            SP2_REMOTE_ACQUISITION_POLL_SECONDS, execution.run.boundaries.sleep
         )
         if waited < SP2_REMOTE_ACQUISITION_POLL_SECONDS:
             facts["acquisition"] = {
@@ -781,7 +946,7 @@ def _sp2_remote_product(
                 "max_polls": SP2_REMOTE_ACQUISITION_MAX_POLLS,
                 "poll_seconds": SP2_REMOTE_ACQUISITION_POLL_SECONDS,
             }
-            return stopped("sp2_remote_acquisition_interval_unavailable")
+            return "sp2_remote_acquisition_interval_unavailable"
         polled = _sp2_remote_client(execution, f"acquire_{ordinal}")
         polls.append(
             {
@@ -792,12 +957,7 @@ def _sp2_remote_product(
                 "cause": polled.cause,
             }
         )
-        # A link-local fallback is a failed acquisition, not an address.
-        if (
-            polled.observed
-            and polled.ipv4 not in ("", "0.0.0.0")
-            and not polled.ipv4.startswith("169.254.")
-        ):
+        if sp2_remote_acquired(polled):
             acquired = True
             break
     facts["acquisition"] = {
@@ -806,25 +966,29 @@ def _sp2_remote_product(
         "max_polls": SP2_REMOTE_ACQUISITION_MAX_POLLS,
         "poll_seconds": SP2_REMOTE_ACQUISITION_POLL_SECONDS,
     }
-    readings: list[ClientReading] = []
-    bindings: list[Mapping[str, object]] = []
-    named_scans: list[LeaseScan] = []
-    default_scans: list[LeaseScan] = []
+    return ""
+
+
+def _remote_samples(application: _RemoteApplication) -> str:
+    """Take the two separated client, binding and lease samples."""
+    execution = application.execution
     for ordinal in (1, 2):
-        waited = execution.ledger.wait(Q3_FL_SETTLE_INTERVAL_SECONDS, boundaries.sleep)
+        waited = execution.ledger.wait(
+            Q3_FL_SETTLE_INTERVAL_SECONDS, execution.run.boundaries.sleep
+        )
         if waited < Q3_FL_SETTLE_INTERVAL_SECONDS:
-            return stopped("sp2_remote_sample_interval_unavailable")
+            return "sp2_remote_sample_interval_unavailable"
         label = f"sample_{ordinal}"
         reading = _sp2_remote_client(execution, label)
         binding = read_client_binding(execution, SP2_REMOTE_CLIENT, label)
         scans = _sp2_remote_scan(execution, label)
         named = scans.get(SP2_REMOTE_POOL, LeaseScan(SP2_REMOTE_POOL, False, "absent"))
         default = scans.get("serverPool", LeaseScan("serverPool", False, "absent"))
-        readings.append(reading)
-        bindings.append(binding)
-        named_scans.append(named)
-        default_scans.append(default)
-        facts["samples"].append(
+        application.readings.append(reading)
+        application.bindings.append(binding)
+        application.named_scans.append(named)
+        application.default_scans.append(default)
+        application.facts["samples"].append(
             {
                 "label": label,
                 "client": reading.__dict__,
@@ -833,22 +997,7 @@ def _sp2_remote_product(
                 "default": default.as_facts(),
             }
         )
-    if denied := budget_cause():
-        return stopped(denied)
-    assessment = assess_sp2_remote_samples(
-        readings,
-        bindings,
-        named_scans,
-        default_scans,
-        named_range=AddressRange(pool.lease_start, pool.lease_end),
-        expected_mask=pool.netmask,
-        expected_gateway=pool.gateway,
-        expected_dns=pool.dns_server,
-        expected_capacity=pool.max_users,
-    )
-    assessment.facts.update(facts)
-    assessment.limitations.append("private_candidate_not_public_support")
-    return assessment
+    return ""
 
 
 def _sp2_remote_terminal_state_complete(
@@ -902,64 +1051,11 @@ def run_sp2_remote_relay(execution: Execution) -> None:
     if mismatch:
         execution.stop(mismatch)
         return
-
-    def terminal() -> None:
-        ids = ("M-SP2-REMOTE-FINAL",)
-        if not execution.begin_terminal(ids, "SP2_REMOTE_FINAL"):
-            return
-        with execution.procedure(ids):
-            runtime = boundaries.native_product_runtimes(
-                execution.bound, contract.inventory
-            ).configuration
-            capture = getattr(runtime, "capture_routed_text", None)
-            with execution.ledger.purpose_of("sp2:remote:final:routers"):
-                routers = (
-                    list(
-                        capture(
-                            SP2_REMOTE_ROUTERS,
-                            sample_calls=SP1_CAPTURE_SAMPLE_CALLS,
-                            deadline_seconds=SP1_CAPTURE_DEADLINE_SECONDS,
-                        )
-                    )
-                    if callable(capture)
-                    else []
-                )
-            server = _sp2_remote_snapshot(execution, "terminal")
-            client = _sp2_remote_client(execution, "terminal")
-            binding = read_client_binding(execution, SP2_REMOTE_CLIENT, "terminal")
-            [pool] = [
-                action
-                for action in contract.service_plan.actions
-                if isinstance(action, ConfigureServerDhcpPool)
-            ]
-            state_complete = _sp2_remote_terminal_state_complete(
-                server, client, binding, pool
-            )
-            complete = (
-                terminal_router_rows_complete(routers, SP2_REMOTE_ROUTERS)
-                and state_complete
-            )
-            execution.conclude(
-                ids[0],
-                Assessment(
-                    MeasurementConclusion.SUPPORTED_IN_SAMPLE
-                    if complete
-                    else MeasurementConclusion.INCONCLUSIVE,
-                    facts={
-                        "routers": routers,
-                        "server": server,
-                        "client": client.__dict__,
-                        "binding": dict(binding),
-                        "state_complete": state_complete,
-                        "complete": complete,
-                    },
-                    causes=[] if complete else ["sp2_remote_terminal_incomplete"],
-                    limitations=["terminal_inventory_is_not_product_acceptance"],
-                ),
-            )
-        execution.finish("SP2_REMOTE_FINAL")
-
-    execution.register_terminal(("M-SP2-REMOTE-FINAL",), "SP2_REMOTE_FINAL", terminal)
+    execution.register_terminal(
+        ("M-SP2-REMOTE-FINAL",),
+        "SP2_REMOTE_FINAL",
+        lambda: _sp2_remote_final(execution, contract),
+    )
     if not diagnostic_start(execution):
         return
     ids = ("M-SP2-REMOTE-POOL",)
@@ -975,3 +1071,48 @@ def run_sp2_remote_relay(execution: Execution) -> None:
             assessment = _sp2_remote_product(execution, contract)
             execution.conclude(ids[0], assessment)
     execution.finish("SP2_REMOTE_PRODUCT")
+
+
+def _sp2_remote_final(execution: Execution, contract: Q3ProductContract) -> None:
+    """Take the terminal router, server, client and binding reading."""
+    ids = ("M-SP2-REMOTE-FINAL",)
+    if not execution.begin_terminal(ids, "SP2_REMOTE_FINAL"):
+        return
+    with execution.procedure(ids):
+        routers, _capture_available = capture_terminal_routers(
+            execution, contract, SP2_REMOTE_ROUTERS, "sp2:remote:final:routers"
+        )
+        server = _sp2_remote_snapshot(execution, "terminal")
+        client = _sp2_remote_client(execution, "terminal")
+        binding = read_client_binding(execution, SP2_REMOTE_CLIENT, "terminal")
+        [pool] = [
+            action
+            for action in contract.service_plan.actions
+            if isinstance(action, ConfigureServerDhcpPool)
+        ]
+        state_complete = _sp2_remote_terminal_state_complete(
+            server, client, binding, pool
+        )
+        complete = (
+            terminal_router_rows_complete(routers, SP2_REMOTE_ROUTERS)
+            and state_complete
+        )
+        execution.conclude(
+            ids[0],
+            Assessment(
+                MeasurementConclusion.SUPPORTED_IN_SAMPLE
+                if complete
+                else MeasurementConclusion.INCONCLUSIVE,
+                facts={
+                    "routers": routers,
+                    "server": server,
+                    "client": client.__dict__,
+                    "binding": dict(binding),
+                    "state_complete": state_complete,
+                    "complete": complete,
+                },
+                causes=[] if complete else ["sp2_remote_terminal_incomplete"],
+                limitations=["terminal_inventory_is_not_product_acceptance"],
+            ),
+        )
+    execution.finish("SP2_REMOTE_FINAL")

@@ -2732,32 +2732,7 @@ class ServiceCompiler:
 
     @staticmethod
     def _semantic_hash(plan: ServicePlan) -> str:
-        payload = plan.model_dump(mode="json")
-        payload["semantic_hash"] = ""
-        # Additive scheduling metadata must not perturb legacy plan identities
-        # when it is absent. Non-empty prerequisites remain hash-bound.
-        for action in payload["actions"]:
-            if not action.get("verification_dependencies"):
-                action.pop("verification_dependencies", None)
-            # Shared page ownership is semantic only once it binds more than
-            # the action's own service: a content action that serves nobody
-            # else is the plan it always was. The source record is provenance
-            # for the contract, so two plans that differ only by which
-            # measurement is cited are the same plan.
-            action.pop("content_source_record", None)
-            policy = action.get("native_policy")
-            if isinstance(policy, dict) and not policy.get("companion_pools"):
-                policy.pop("companion_pools", None)
-            if action.get("shared_service_ids") in (
-                None,
-                [],
-                [action.get("service_id")],
-            ):
-                action.pop("shared_service_ids", None)
-        canonical = json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return service_plan_semantic_hash(plan)
 
     @staticmethod
     def _deduplicate_issues(issues):
@@ -2797,3 +2772,38 @@ class ServiceCompiler:
             summary=summary,
             issues=issues,
         )
+
+
+def service_plan_semantic_hash(plan: ServicePlan) -> str:
+    """Return the canonical identity of one compiled service plan.
+
+    The compiler stamps every plan it builds with this identity, and a
+    consumer that must prove a plan unchanged recomputes it here instead
+    of reaching into the compiler.
+    """
+    payload = plan.model_dump(mode="json")
+    payload["semantic_hash"] = ""
+    # Additive scheduling metadata must not perturb legacy plan identities
+    # when it is absent. Non-empty prerequisites remain hash-bound.
+    for action in payload["actions"]:
+        if not action.get("verification_dependencies"):
+            action.pop("verification_dependencies", None)
+        # Shared page ownership is semantic only once it binds more than
+        # the action's own service: a content action that serves nobody
+        # else is the plan it always was. The source record is provenance
+        # for the contract, so two plans that differ only by which
+        # measurement is cited are the same plan.
+        action.pop("content_source_record", None)
+        policy = action.get("native_policy")
+        if isinstance(policy, dict) and not policy.get("companion_pools"):
+            policy.pop("companion_pools", None)
+        if action.get("shared_service_ids") in (
+            None,
+            [],
+            [action.get("service_id")],
+        ):
+            action.pop("shared_service_ids", None)
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

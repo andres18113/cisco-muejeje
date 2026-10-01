@@ -46,6 +46,7 @@ from ....domain.enterprise.services.dhcp_lease_evidence import (
     CalibrationState,
     ClientAttribution,
     ClientReading,
+    LeaseCalibration,
     LeaseScan,
     assess_capacity_one_negative,
     assess_lease_calibration,
@@ -1022,6 +1023,25 @@ def _sp2_first_probe_read(scan: LeaseScan) -> bool:
     )
 
 
+@dataclass
+class _Sp2Progress:
+    """What SP-2's one-client-at-a-time activation has observed so far."""
+
+    samples: list[dict[str, Any]] = field(default_factory=list)
+    progression: dict[str, Any] = field(default_factory=dict)
+    preclient_scans: list[dict[str, Any]] = field(default_factory=list)
+    first_preclient_complete: bool = False
+    #: The first client's last sample: its reading, binding and both scans.
+    first_last_sample: (
+        tuple[ClientReading, Mapping[str, object], LeaseScan, LeaseScan] | None
+    ) = None
+
+    def refuse(self, name: str, *causes: str) -> bool:
+        """Record that one client was not admitted, and end the activation."""
+        self.progression[name] = {"admitted": False, "causes": list(causes)}
+        return False
+
+
 def _sp2_native_dhcp(
     execution: Execution,
     state: _Q3FlState,
@@ -1043,202 +1063,268 @@ def _sp2_native_dhcp(
         execution.stop("sp2_pool_or_client_selection_not_exact")
         _q3fl_conclude_dhcp(execution, state, ids)
         return
-    samples: list[dict[str, Any]] = []
-    progression: dict[str, Any] = {}
-    preclient_scans: list[dict[str, Any]] = []
-    first_preclient_complete = False
-    first_last_sample: (
-        tuple[ClientReading, Mapping[str, object], LeaseScan, LeaseScan] | None
-    ) = None
+    progress = _Sp2Progress()
     for ordinal, client in enumerate(state.clients):
-        if client.name not in state.admitted or execution.stopped:
-            progression[client.name] = {
-                "admitted": False,
-                "causes": ["forwarding_or_stop"],
-            }
-            break
-        unbound = read_acquisition_clients(
-            execution, state, f"before_client_mode:{client.name}"
-        )
-        names = (
-            tuple(item.name for item in state.clients)
-            if ordinal == 0
-            else (client.name,)
-        )
-        if any(
-            (item := unbound.get(name)) is None
-            or not item.observed
-            or item.mode is not False
-            or item.ipv4 not in ("", "0.0.0.0")
-            for name in names
-        ):
-            reason = (
-                "sp2_clients_not_unbound_after_enable"
-                if ordinal == 0
-                else "sp2_second_client_not_unbound"
-            )
-            execution.stop(reason)
-            progression[client.name] = {"admitted": False, "causes": [reason]}
-            break
-        preclient = scan_dhcp_pools(
-            execution, state, f"before_client_mode:{client.name}"
-        )
-        preclient_scans.append(
-            {
-                "client": client.name,
-                "pools": {name: scan.as_facts() for name, scan in preclient.items()},
-            }
-        )
-        named_before = preclient.get(Q3_POOL)
-        default_before = preclient.get("serverPool")
-        if (
-            named_before is None
-            or default_before is None
-            or not (
-                _sp2_first_probe_read(named_before)
-                if ordinal == 0
-                else named_before.observed
-            )
-            or not (
-                _sp2_first_probe_read(default_before)
-                if ordinal == 0
-                else default_before.observed
-            )
-        ):
-            reason = "sp2_preclient_pool_scan_unobserved"
-        elif ordinal == 0 and (named_before.rows or default_before.rows):
-            reason = "sp2_preclient_lease_rows_present"
-        elif ordinal > 0 and (not named_before.clean or not default_before.clean):
-            reason = "sp2_second_client_preclient_scan_incomplete"
-        elif ordinal > 0 and any(
-            normalized_mac(row.mac) == normalized_mac(unbound[client.name].mac)
-            for scan in (named_before, default_before)
-            for row in scan.rows
-        ):
-            reason = "sp2_second_client_preexisting_lease"
-        else:
-            reason = ""
-        if reason:
-            execution.stop(reason)
-            progression[client.name] = {"admitted": False, "causes": [reason]}
-            break
-        if ordinal == 0:
-            first_preclient_complete = named_before.clean and default_before.clean
-        if ordinal > 0 and first_last_sample is not None:
-            first_name = state.clients[0].name
-            recheck_binding = read_client_binding(
-                execution, first_name, f"before_second_client:{first_name}"
-            )
-            first_now = unbound.get(
-                first_name, ClientReading(first_name, False, cause="unread")
-            )
-            still_attributed, recheck_causes = sp2_client_progression(
-                (first_last_sample[0], first_now),
-                (first_last_sample[1], recheck_binding),
-                (first_last_sample[2], named_before),
-                (first_last_sample[3], default_before),
-                named_range=AddressRange(pool.lease_start, pool.lease_end),
-                expected_mask=pool.netmask,
-                expected_gateway=pool.gateway,
-                expected_dns=pool.dns_server,
-            )
-            preclient_scans[-1]["first_client_recheck"] = {
-                "client": first_name,
-                "reading": first_now.__dict__,
-                "binding": dict(recheck_binding),
-                "admitted": still_attributed,
-                "causes": list(recheck_causes),
-            }
-            if not still_attributed:
-                reason = "sp2_first_client_attribution_drifted"
-                execution.stop(reason)
-                progression[first_name] = {
-                    "admitted": False,
-                    "causes": [reason, *recheck_causes],
-                }
-                progression[client.name] = {
-                    "admitted": False,
-                    "causes": [reason],
-                }
-                break
-        cause = _q3fl_client_mode(
+        if not _sp2_activate_client(
             execution,
             state,
             contract,
             configuration_runtime,
             context,
-            device_names=(client.name,),
-            label=f"after_client_mode:{client.name}",
-        )
-        if cause:
-            execution.stop(cause)
-            progression[client.name] = {"admitted": False, "causes": [cause]}
+            pool,
+            progress,
+            ordinal,
+            client,
+        ):
             break
-        observed: list[ClientReading] = []
-        bindings: list[Mapping[str, object]] = []
-        named_scans: list[LeaseScan] = []
-        native_scans: list[LeaseScan] = []
-        for index in (1, 2):
-            waited = execution.ledger.wait(
-                Q3_FL_SETTLE_INTERVAL_SECONDS, execution.run.boundaries.sleep
-            )
-            if waited < Q3_FL_SETTLE_INTERVAL_SECONDS:
-                execution.stop("sp2_sample_interval_not_available")
-                break
-            label = f"sample:{client.name}:{index}"
-            reading = read_acquisition_clients(execution, state, label).get(
-                client.name, ClientReading(client.name, False, cause="unread")
-            )
-            binding = read_client_binding(execution, client.name, label)
-            scans = scan_dhcp_pools(execution, state, label)
-            named = scans.get(Q3_POOL, LeaseScan(Q3_POOL, False, "scan_absent"))
-            native = scans.get(
-                "serverPool", LeaseScan("serverPool", False, "scan_absent")
-            )
-            observed.append(reading)
-            bindings.append(binding)
-            named_scans.append(named)
-            native_scans.append(native)
-            samples.append(
-                {
-                    "label": label,
-                    "client": reading.__dict__,
-                    "binding": dict(binding),
-                    "named_scan": named.as_facts(),
-                    "native_scan": native.as_facts(),
-                }
-            )
-        if execution.stopped:
-            progression[client.name] = {
-                "admitted": False,
-                "causes": [execution.record.primary_failure],
-            }
-            break
-        permitted, causes = sp2_client_progression(
-            observed,
-            bindings,
-            named_scans,
-            native_scans,
-            named_range=AddressRange(pool.lease_start, pool.lease_end),
-            expected_mask=pool.netmask,
-            expected_gateway=pool.gateway,
-            expected_dns=pool.dns_server,
-            preclient_complete=first_preclient_complete,
-        )
-        progression[client.name] = {"admitted": permitted, "causes": list(causes)}
-        if not permitted:
-            break
-        if ordinal == 0:
-            first_last_sample = (
-                observed[-1],
-                bindings[-1],
-                named_scans[-1],
-                native_scans[-1],
-            )
-    state.server_facts["sp2_samples"] = samples
-    state.server_facts["sp2_progression"] = progression
-    state.server_facts["sp2_preclient_scans"] = preclient_scans
+    state.server_facts["sp2_samples"] = progress.samples
+    state.server_facts["sp2_progression"] = progress.progression
+    state.server_facts["sp2_preclient_scans"] = progress.preclient_scans
     _q3fl_conclude_dhcp(execution, state, ids)
+
+
+def _sp2_activate_client(
+    execution: Execution,
+    state: _Q3FlState,
+    contract: Q3ProductContract,
+    configuration_runtime,
+    context: ConfigurationRuntimeContext,
+    pool: ConfigureServerDhcpPool,
+    progress: _Sp2Progress,
+    ordinal: int,
+    client: DhcpAcquisitionClient,
+) -> bool:
+    """Admit, activate and sample one client; False ends the activation.
+
+    The client is admitted only after every client it must not disturb was
+    read unbound, both pools were scanned before it, and, from the second
+    client on, the first one is still attributed. It is then put in DHCP
+    mode and sampled twice before the progression rule decides.
+    """
+    if client.name not in state.admitted or execution.stopped:
+        return progress.refuse(client.name, "forwarding_or_stop")
+    unbound = read_acquisition_clients(
+        execution, state, f"before_client_mode:{client.name}"
+    )
+    names = (
+        tuple(item.name for item in state.clients) if ordinal == 0 else (client.name,)
+    )
+    if any(
+        (item := unbound.get(name)) is None
+        or not item.observed
+        or item.mode is not False
+        or item.ipv4 not in ("", "0.0.0.0")
+        for name in names
+    ):
+        reason = (
+            "sp2_clients_not_unbound_after_enable"
+            if ordinal == 0
+            else "sp2_second_client_not_unbound"
+        )
+        execution.stop(reason)
+        return progress.refuse(client.name, reason)
+    preclient = scan_dhcp_pools(execution, state, f"before_client_mode:{client.name}")
+    progress.preclient_scans.append(
+        {
+            "client": client.name,
+            "pools": {name: scan.as_facts() for name, scan in preclient.items()},
+        }
+    )
+    named_before = preclient.get(Q3_POOL)
+    default_before = preclient.get("serverPool")
+    reason = _sp2_preclient_cause(
+        ordinal, named_before, default_before, unbound, client.name
+    )
+    if reason:
+        execution.stop(reason)
+        return progress.refuse(client.name, reason)
+    assert named_before is not None and default_before is not None
+    if ordinal == 0:
+        progress.first_preclient_complete = named_before.clean and default_before.clean
+    if (
+        ordinal > 0
+        and progress.first_last_sample is not None
+        and not _sp2_first_client_still_attributed(
+            execution, state, pool, progress, unbound, named_before, default_before
+        )
+    ):
+        reason = "sp2_first_client_attribution_drifted"
+        progress.progression[client.name] = {
+            "admitted": False,
+            "causes": [reason],
+        }
+        return False
+    cause = _q3fl_client_mode(
+        execution,
+        state,
+        contract,
+        configuration_runtime,
+        context,
+        device_names=(client.name,),
+        label=f"after_client_mode:{client.name}",
+    )
+    if cause:
+        execution.stop(cause)
+        return progress.refuse(client.name, cause)
+    sampled = _sp2_sample_client(execution, state, progress, client)
+    if execution.stopped:
+        return progress.refuse(client.name, execution.record.primary_failure)
+    observed, bindings, named_scans, native_scans = sampled
+    permitted, causes = sp2_client_progression(
+        observed,
+        bindings,
+        named_scans,
+        native_scans,
+        named_range=AddressRange(pool.lease_start, pool.lease_end),
+        expected_mask=pool.netmask,
+        expected_gateway=pool.gateway,
+        expected_dns=pool.dns_server,
+        preclient_complete=progress.first_preclient_complete,
+    )
+    progress.progression[client.name] = {"admitted": permitted, "causes": list(causes)}
+    if not permitted:
+        return False
+    if ordinal == 0:
+        progress.first_last_sample = (
+            observed[-1],
+            bindings[-1],
+            named_scans[-1],
+            native_scans[-1],
+        )
+    return True
+
+
+def _sp2_preclient_cause(
+    ordinal: int,
+    named_before: LeaseScan | None,
+    default_before: LeaseScan | None,
+    unbound: Mapping[str, ClientReading],
+    client: str,
+) -> str:
+    """Name why the pre-client scans do not admit this client, or return "".
+
+    The first client's scans may carry the bounded first-probe index errors
+    and must hold no row; a later client needs both scans clean and none of
+    its own MAC already leased.
+    """
+    if (
+        named_before is None
+        or default_before is None
+        or not (
+            _sp2_first_probe_read(named_before)
+            if ordinal == 0
+            else named_before.observed
+        )
+        or not (
+            _sp2_first_probe_read(default_before)
+            if ordinal == 0
+            else default_before.observed
+        )
+    ):
+        return "sp2_preclient_pool_scan_unobserved"
+    if ordinal == 0 and (named_before.rows or default_before.rows):
+        return "sp2_preclient_lease_rows_present"
+    if ordinal > 0 and (not named_before.clean or not default_before.clean):
+        return "sp2_second_client_preclient_scan_incomplete"
+    if ordinal > 0 and any(
+        normalized_mac(row.mac) == normalized_mac(unbound[client].mac)
+        for scan in (named_before, default_before)
+        for row in scan.rows
+    ):
+        return "sp2_second_client_preexisting_lease"
+    return ""
+
+
+def _sp2_first_client_still_attributed(
+    execution: Execution,
+    state: _Q3FlState,
+    pool: ConfigureServerDhcpPool,
+    progress: _Sp2Progress,
+    unbound: Mapping[str, ClientReading],
+    named_before: LeaseScan,
+    default_before: LeaseScan,
+) -> bool:
+    """Re-read the first client before the second one, and keep it attributed.
+
+    A drifted first client stops the run and records why, for both clients.
+    """
+    assert progress.first_last_sample is not None
+    first_name = state.clients[0].name
+    recheck_binding = read_client_binding(
+        execution, first_name, f"before_second_client:{first_name}"
+    )
+    first_now = unbound.get(
+        first_name, ClientReading(first_name, False, cause="unread")
+    )
+    still_attributed, recheck_causes = sp2_client_progression(
+        (progress.first_last_sample[0], first_now),
+        (progress.first_last_sample[1], recheck_binding),
+        (progress.first_last_sample[2], named_before),
+        (progress.first_last_sample[3], default_before),
+        named_range=AddressRange(pool.lease_start, pool.lease_end),
+        expected_mask=pool.netmask,
+        expected_gateway=pool.gateway,
+        expected_dns=pool.dns_server,
+    )
+    progress.preclient_scans[-1]["first_client_recheck"] = {
+        "client": first_name,
+        "reading": first_now.__dict__,
+        "binding": dict(recheck_binding),
+        "admitted": still_attributed,
+        "causes": list(recheck_causes),
+    }
+    if not still_attributed:
+        reason = "sp2_first_client_attribution_drifted"
+        execution.stop(reason)
+        progress.progression[first_name] = {
+            "admitted": False,
+            "causes": [reason, *recheck_causes],
+        }
+    return still_attributed
+
+
+def _sp2_sample_client(
+    execution: Execution,
+    state: _Q3FlState,
+    progress: _Sp2Progress,
+    client: DhcpAcquisitionClient,
+) -> tuple[
+    list[ClientReading], list[Mapping[str, object]], list[LeaseScan], list[LeaseScan]
+]:
+    """Take two separated readings, bindings and scans of one activated client."""
+    observed: list[ClientReading] = []
+    bindings: list[Mapping[str, object]] = []
+    named_scans: list[LeaseScan] = []
+    native_scans: list[LeaseScan] = []
+    for index in (1, 2):
+        waited = execution.ledger.wait(
+            Q3_FL_SETTLE_INTERVAL_SECONDS, execution.run.boundaries.sleep
+        )
+        if waited < Q3_FL_SETTLE_INTERVAL_SECONDS:
+            execution.stop("sp2_sample_interval_not_available")
+            break
+        label = f"sample:{client.name}:{index}"
+        reading = read_acquisition_clients(execution, state, label).get(
+            client.name, ClientReading(client.name, False, cause="unread")
+        )
+        binding = read_client_binding(execution, client.name, label)
+        scans = scan_dhcp_pools(execution, state, label)
+        named = scans.get(Q3_POOL, LeaseScan(Q3_POOL, False, "scan_absent"))
+        native = scans.get("serverPool", LeaseScan("serverPool", False, "scan_absent"))
+        observed.append(reading)
+        bindings.append(binding)
+        named_scans.append(named)
+        native_scans.append(native)
+        progress.samples.append(
+            {
+                "label": label,
+                "client": reading.__dict__,
+                "binding": dict(binding),
+                "named_scan": named.as_facts(),
+                "native_scan": native.as_facts(),
+            }
+        )
+    return observed, bindings, named_scans, native_scans
 
 
 def _q3fl_repeat(
@@ -1310,6 +1396,81 @@ def _q3fl_conclude_dhcp(
 ) -> None:
     """Conclude the table, acquisition, capacity, repeat and timing measurements."""
     capacity = execution.definition.dhcp_pool_capacity
+    intended_calibration, native_calibrations = _q3fl_calibrations(state, capacity)
+    if "M-DHCP-2" in ids:
+        execution.conclude(
+            "M-DHCP-2",
+            Assessment(
+                intended_calibration.conclusion,
+                facts={
+                    "intended": intended_calibration.as_facts(),
+                    "native": {
+                        name: item.as_facts()
+                        for name, item in native_calibrations.items()
+                    },
+                    "scans": [
+                        {
+                            "label": label,
+                            "pools": {
+                                name: scan.as_facts() for name, scan in scans.items()
+                            },
+                        }
+                        for label, scans in state.scans
+                    ],
+                },
+                causes=list(intended_calibration.causes),
+                limitations=list(intended_calibration.limitations),
+            ),
+        )
+    intended_range, native_range, netmask = _q3fl_ranges(execution, state)
+    attributions = _q3fl_attributions(
+        state,
+        intended_range,
+        native_range,
+        netmask,
+        intended_calibration,
+        native_calibrations,
+    )
+    if "M-DHCP-6" in ids:
+        execution.conclude(
+            "M-DHCP-6", _q3fl_acquisition_assessment(state, attributions)
+        )
+    if "M-SP2-POOL-IDENTITY" in ids:
+        execution.conclude(
+            "M-SP2-POOL-IDENTITY",
+            _sp2_pool_identity_assessment(
+                execution, state, native_calibrations, intended_range, netmask
+            ),
+        )
+    # A measurement whose procedure was never reached did not run: it is
+    # NOT_RUN with the reason, never a RAN row that says nothing happened.
+    stopped = execution.record.primary_failure or "not_reached"
+    if "M-DHCP-6-CAP" in ids:
+        if len(attributions) < 2:
+            execution.not_run(
+                ["M-DHCP-6-CAP"], f"capacity_negative_not_reached:{stopped}"
+            )
+        else:
+            execution.conclude(
+                "M-DHCP-6-CAP",
+                _q3fl_capacity_assessment(state, attributions, capacity),
+            )
+    if "M-DHCP-6-REPEAT" in ids:
+        if not state.repeat:
+            execution.not_run(["M-DHCP-6-REPEAT"], f"repeat_not_reached:{stopped}")
+        else:
+            execution.conclude("M-DHCP-6-REPEAT", _q3fl_repeat_assessment(state))
+    if "M-DHCP-6-TIME" in ids:
+        if not state.timing_labels:
+            execution.not_run(["M-DHCP-6-TIME"], f"timing_not_reached:{stopped}")
+        else:
+            execution.conclude("M-DHCP-6-TIME", _q3fl_timing_assessment(state))
+
+
+def _q3fl_calibrations(
+    state: _Q3FlState, capacity: int
+) -> tuple[LeaseCalibration, dict[str, LeaseCalibration]]:
+    """Calibrate the intended pool and every native pool from the run's scans."""
     macs = [
         item.mac
         for _label, values in state.client_reads
@@ -1350,32 +1511,18 @@ def _q3fl_conclude_dhcp(
         )
         for name in state.native_pools
     }
-    if "M-DHCP-2" in ids:
-        execution.conclude(
-            "M-DHCP-2",
-            Assessment(
-                intended_calibration.conclusion,
-                facts={
-                    "intended": intended_calibration.as_facts(),
-                    "native": {
-                        name: item.as_facts()
-                        for name, item in native_calibrations.items()
-                    },
-                    "scans": [
-                        {
-                            "label": label,
-                            "pools": {
-                                name: scan.as_facts() for name, scan in scans.items()
-                            },
-                        }
-                        for label, scans in state.scans
-                    ],
-                },
-                causes=list(intended_calibration.causes),
-                limitations=list(intended_calibration.limitations),
-            ),
-        )
-    intended_range, native_range, netmask = _q3fl_ranges(execution, state)
+    return intended_calibration, native_calibrations
+
+
+def _q3fl_attributions(
+    state: _Q3FlState,
+    intended_range: AddressRange,
+    native_range: AddressRange | None,
+    netmask: str,
+    intended_calibration: LeaseCalibration,
+    native_calibrations: dict[str, LeaseCalibration],
+) -> dict[str, ClientAttribution]:
+    """Attribute every acquired client from its bracketing readings and scans."""
     native_name = state.native_pools[0] if state.native_pools else ""
     attributions: dict[str, ClientAttribution] = {}
     for client in state.clients:
@@ -1408,79 +1555,58 @@ def _q3fl_conclude_dhcp(
             intended_calibration=intended_calibration,
             native_calibration=native_calibrations.get(native_name),
         )
-    if "M-DHCP-6" in ids:
-        execution.conclude(
-            "M-DHCP-6", _q3fl_acquisition_assessment(state, attributions)
-        )
-    if "M-SP2-POOL-IDENTITY" in ids:
-        latest = state.latest_scans()
-        recent_clients = state.client_reads[-1][1] if state.client_reads else {}
-        native_pool = "serverPool"
-        assessment = assess_sp2_pool_identity(
-            tuple(client.name for client in state.clients),
-            recent_clients,
-            latest.get(Q3_POOL, LeaseScan(Q3_POOL, False, "scan_absent")),
-            latest.get(native_pool, LeaseScan(native_pool, False, "scan_absent")),
-            named_pool=Q3_POOL,
-            native_pool=native_pool,
-            native_calibration=native_calibrations.get(native_pool),
-            named_range=intended_range,
-            expected_netmask=netmask,
-            other_pools=tuple(
-                name for name in state.native_pools if name != native_pool
-            ),
-        )
-        if execution.definition.stage is QualificationStage.SP2_NATIVE_POOL:
-            assessment.facts["samples"] = state.server_facts.get("sp2_samples", [])
-            progression = state.server_facts.get("sp2_progression", {})
-            assessment.facts["progression"] = progression
-            assessment.facts["mode_effects"] = state.server_facts.get(
-                "sp2_mode_effects", []
-            )
-            assessment.facts["preclient_scans"] = state.server_facts.get(
-                "sp2_preclient_scans", []
-            )
-            preclient_sets = [
-                scans
-                for label, scans in state.scans
-                if label.startswith("before_client_mode:")
-            ]
-            preclient_complete = len(preclient_sets) == len(state.clients) and all(
-                scan.clean for scans in preclient_sets for scan in scans.values()
-            )
-            assessment = cap_sp2_pool_identity(
-                assessment,
-                progression,
-                tuple(client.name for client in state.clients),
-                preclient_complete=preclient_complete,
-            )
-        execution.conclude(
-            "M-SP2-POOL-IDENTITY",
-            assessment,
-        )
-    # A measurement whose procedure was never reached did not run: it is
-    # NOT_RUN with the reason, never a RAN row that says nothing happened.
-    stopped = execution.record.primary_failure or "not_reached"
-    if "M-DHCP-6-CAP" in ids:
-        if len(attributions) < 2:
-            execution.not_run(
-                ["M-DHCP-6-CAP"], f"capacity_negative_not_reached:{stopped}"
-            )
-        else:
-            execution.conclude(
-                "M-DHCP-6-CAP",
-                _q3fl_capacity_assessment(state, attributions, capacity),
-            )
-    if "M-DHCP-6-REPEAT" in ids:
-        if not state.repeat:
-            execution.not_run(["M-DHCP-6-REPEAT"], f"repeat_not_reached:{stopped}")
-        else:
-            execution.conclude("M-DHCP-6-REPEAT", _q3fl_repeat_assessment(state))
-    if "M-DHCP-6-TIME" in ids:
-        if not state.timing_labels:
-            execution.not_run(["M-DHCP-6-TIME"], f"timing_not_reached:{stopped}")
-        else:
-            execution.conclude("M-DHCP-6-TIME", _q3fl_timing_assessment(state))
+    return attributions
+
+
+def _sp2_pool_identity_assessment(
+    execution: Execution,
+    state: _Q3FlState,
+    native_calibrations: dict[str, LeaseCalibration],
+    intended_range: AddressRange,
+    netmask: str,
+) -> Assessment:
+    """Judge which physical pool served the latest clients, capped for SP-2.
+
+    Under the SP-2 native pool stage the assessment also carries the samples,
+    the progression, the mode effects and the pre-client scans, and is capped
+    by the progression and by whether every pre-client scan was complete.
+    """
+    latest = state.latest_scans()
+    recent_clients = state.client_reads[-1][1] if state.client_reads else {}
+    native_pool = "serverPool"
+    assessment = assess_sp2_pool_identity(
+        tuple(client.name for client in state.clients),
+        recent_clients,
+        latest.get(Q3_POOL, LeaseScan(Q3_POOL, False, "scan_absent")),
+        latest.get(native_pool, LeaseScan(native_pool, False, "scan_absent")),
+        named_pool=Q3_POOL,
+        native_pool=native_pool,
+        native_calibration=native_calibrations.get(native_pool),
+        named_range=intended_range,
+        expected_netmask=netmask,
+        other_pools=tuple(name for name in state.native_pools if name != native_pool),
+    )
+    if execution.definition.stage is not QualificationStage.SP2_NATIVE_POOL:
+        return assessment
+    assessment.facts["samples"] = state.server_facts.get("sp2_samples", [])
+    progression = state.server_facts.get("sp2_progression", {})
+    assessment.facts["progression"] = progression
+    assessment.facts["mode_effects"] = state.server_facts.get("sp2_mode_effects", [])
+    assessment.facts["preclient_scans"] = state.server_facts.get(
+        "sp2_preclient_scans", []
+    )
+    preclient_sets = [
+        scans for label, scans in state.scans if label.startswith("before_client_mode:")
+    ]
+    preclient_complete = len(preclient_sets) == len(state.clients) and all(
+        scan.clean for scans in preclient_sets for scan in scans.values()
+    )
+    return cap_sp2_pool_identity(
+        assessment,
+        progression,
+        tuple(client.name for client in state.clients),
+        preclient_complete=preclient_complete,
+    )
 
 
 def _q3fl_ranges(

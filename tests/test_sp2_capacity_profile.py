@@ -8,7 +8,9 @@ import pytest
 from packet_tracer_mcp.adapters.cli import sp2_mixed_qualification
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
     _e5_closure,
-    _path_admission,
+)
+from packet_tracer_mcp.application.use_cases.service_path_admission import (
+    path_admission,
 )
 from packet_tracer_mcp.domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
@@ -215,7 +217,7 @@ def test_capacity_selected_l2_components_are_in_the_actual_e5_effect_scope(local
     if local_only:
         services = [item for item in services if item.id == "service/hq/hq-dhcp"]
     assert services
-    unsupported, paths = _path_admission(
+    unsupported, paths = path_admission(
         contract.configuration_plan,
         contract.service_plan,
         services,

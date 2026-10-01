@@ -17,8 +17,10 @@ from packet_tracer_mcp.adapters.cli.sp1_routed_qualification import (
     sp1_routed_product_contract,
 )
 from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
-    _path_admission,
     _paths_by_pair,
+)
+from packet_tracer_mcp.application.use_cases.service_path_admission import (
+    path_admission,
 )
 from packet_tracer_mcp.domain.enterprise.models.routed_forwarding import (
     RoutedForwardingObservation,
@@ -84,7 +86,7 @@ def test_final_native_readings_replay_through_corrected_routed_rule(episode):
         == product["configuration_semantic_hash"]
     )
     assert contract.service_plan.semantic_hash == product["service_semantic_hash"]
-    unsupported, paths = _path_admission(
+    unsupported, paths = path_admission(
         contract.configuration_plan,
         contract.service_plan,
         contract.service_plan.services,

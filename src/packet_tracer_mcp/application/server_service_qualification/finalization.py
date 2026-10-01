@@ -171,7 +171,7 @@ def finalize(execution: Execution) -> None:
     # end of it: the effect gate can refuse a removal halfway through the loop
     # above. A restoration claim needs the receiver to still be the bound one
     # when the last reading was taken, so the two are one condition here.
-    attributable = owned and not execution.authority_lost
+    attributable = owned and not execution.authority.lost
     record.restoration_proven = attributable and all(
         item is not None
         and physical_workspace_restoration_matches(execution.baseline, item)
@@ -212,8 +212,8 @@ def _refuse_owned_cleanup(execution: Execution) -> None:
     """
     record = execution.record
     cause = (
-        execution.authority_lost
-        or execution.authority_observation_refused
+        execution.authority.lost
+        or execution.authority.observation_refused
         or "execution_authority_lost"
     )
     if execution.bag_touched:

@@ -8,6 +8,11 @@ through an explicit handler, and finalization always follows an effect.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from ...domain.enterprise.models.physical_deployment import PhysicalWorkspaceObservation
 from ...domain.enterprise.models.service_qualification import (
     EFFECT_GATE_LIMIT,
     LOCAL_OBSERVATION_TIMEOUT_SECONDS,
@@ -19,6 +24,8 @@ from ...domain.enterprise.models.service_qualification import (
     ExecutionMode,
     MeasurementStatus,
     QualificationOutcome,
+    QualificationRecord,
+    QualificationRefusal,
     QualificationRequest,
     QualificationStage,
     RefusalKind,
@@ -34,7 +41,10 @@ from ...domain.enterprise.models.service_qualification import (
 from ...domain.models.plans import DevicePlan, LinkPlan
 from ..ports.service_qualification import OpenedTransport
 from ..ports.service_run_record import RunRecordPersistenceError
-from ..use_cases.deploy_enterprise_topology import disposable_workspace_error
+from ..use_cases.deploy_enterprise_topology import (
+    PhysicalTopologyRuntime,
+    disposable_workspace_error,
+)
 from .campaign_authority import CampaignHold, diagnostic_admission
 from .contracts import (
     IsolationObservation,
@@ -69,6 +79,17 @@ from .workflows.sp2_remote_relay import run_sp2_remote_relay
 from .workflows.web_diagnostics import run_d_web
 
 
+@dataclass(frozen=True)
+class _LocalAdmission:
+    """What local admission resolved and observed before any channel exists."""
+
+    definition: StageDefinition
+    devices: tuple[DevicePlan, ...]
+    links: tuple[LinkPlan, ...]
+    isolation: IsolationObservation
+    repository: RepositoryIdentity
+
+
 def run_qualification(
     request: QualificationRequest,
     boundaries: QualificationBoundaries,
@@ -80,6 +101,49 @@ def run_qualification(
     `experimental_capabilities` is the runner-only scope of unqualified
     behaviors the probes may exercise. An experiment that needs a capability
     outside it does not run. Nothing else in the repository reads this scope.
+    """
+    admitted = _local_admission(request, boundaries)
+    if isinstance(admitted, QualificationResult):
+        return admitted
+    definition = admitted.definition
+    diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
+    hold = CampaignHold(boundaries.campaign_coordinator)
+    try:
+        if definition.profile_id:
+            refusals, diagnostic_lifecycle = diagnostic_admission(
+                definition, request.authorization, boundaries, hold
+            )
+            if refusals:
+                return refused_result(refusals, claim_release=hold.finalize())
+        return _with_campaign_claim(
+            request,
+            boundaries,
+            definition,
+            admitted.devices,
+            admitted.links,
+            admitted.isolation,
+            admitted.repository,
+            experimental_capabilities,
+            diagnostic_lifecycle=diagnostic_lifecycle,
+            hold=hold,
+        )
+    except KeyboardInterrupt as exc:
+        raise QualificationCancelled(exc, hold.finalize()) from exc
+    finally:
+        # Every ordinary path finalizes the hold before returning its result.
+        # This remains the idempotent safety net for an unexpected exception.
+        hold.finalize()
+
+
+def _local_admission(
+    request: QualificationRequest, boundaries: QualificationBoundaries
+) -> _LocalAdmission | QualificationResult:
+    """Decide everything that needs no channel, in order, refusing at the first.
+
+    The request rule, the stage's fixture plans, the typed execution mode,
+    process isolation, the repository identity and the campaign authority,
+    which waives exactly the upstream-publication rule for the attempt it
+    names. A refusal here has touched nothing.
     """
     refusals = request_refusals(request)
     if refusals:
@@ -178,33 +242,7 @@ def run_qualification(
         )
     if refusals:
         return refused_result(refusals)
-    diagnostic_lifecycle: DiagnosticLifecycleObservation | None = None
-    hold = CampaignHold(boundaries.campaign_coordinator)
-    try:
-        if definition.profile_id:
-            refusals, diagnostic_lifecycle = diagnostic_admission(
-                definition, authorization, boundaries, hold
-            )
-            if refusals:
-                return refused_result(refusals, claim_release=hold.finalize())
-        return _with_campaign_claim(
-            request,
-            boundaries,
-            definition,
-            devices,
-            links,
-            isolation,
-            repository,
-            experimental_capabilities,
-            diagnostic_lifecycle=diagnostic_lifecycle,
-            hold=hold,
-        )
-    except KeyboardInterrupt as exc:
-        raise QualificationCancelled(exc, hold.finalize()) from exc
-    finally:
-        # Every ordinary path finalizes the hold before returning its result.
-        # This remains the idempotent safety net for an unexpected exception.
-        hold.finalize()
+    return _LocalAdmission(definition, devices, links, isolation, repository)
 
 
 def _with_campaign_claim(
@@ -223,223 +261,9 @@ def _with_campaign_claim(
     """Run the admitted part of one invocation while its campaign claim is held."""
     moment = boundaries.now()
     run_id = boundaries.new_run_id(moment)
-    product_contract: Q3ProductContract | None = None
-    if definition.stage in SP1_ROUTED_STAGES:
-        if (
-            not boundaries.q3_required_build
-            or request.packet_tracer_build != boundaries.q3_required_build
-            or boundaries.sp1_product_contract is None
-        ):
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "SP-1 has no reviewed exact-build contract.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = boundaries.sp1_product_contract(
-                request.packet_tracer_build, run_id, definition.selected_clients
-            )
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"sp1_product_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-    elif definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
-        if (
-            not boundaries.q3_required_build
-            or request.packet_tracer_build != boundaries.q3_required_build
-            or boundaries.native_product_contract is None
-            or (
-                definition.profile_version == "4"
-                and boundaries.execution_mode is ExecutionMode.LIVE
-                and boundaries.native_public_product_entry is None
-            )
-        ):
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "Native product has no reviewed exact-build contract.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = boundaries.native_product_contract(
-                request.packet_tracer_build, run_id
-            )
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"native_product_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-    elif definition.stage is QualificationStage.SP2_REMOTE_RELAY:
-        if (
-            not boundaries.q3_required_build
-            or request.packet_tracer_build != boundaries.q3_required_build
-            or boundaries.sp2_remote_relay_contract is None
-        ):
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "SP-2 remote relay has no exact-build contract.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = boundaries.sp2_remote_relay_contract(
-                request.packet_tracer_build, run_id
-            )
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"sp2_remote_relay_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-    elif definition.stage in (
-        QualificationStage.SP2_MIXED_PRODUCT,
-        QualificationStage.SP2_CAPACITY_PRODUCT,
-    ):
-        factory = (
-            boundaries.sp2_capacity_product_contract
-            if definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
-            else boundaries.sp2_mixed_product_contract
-        )
-        if (
-            not boundaries.q3_required_build
-            or request.packet_tracer_build != boundaries.q3_required_build
-            or factory is None
-        ):
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "SP-2 mixed product has no exact-build contract.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = factory(request.packet_tracer_build, run_id)
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"sp2_mixed_product_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-    elif definition.stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES, *SP2_STAGES):
-        if (
-            not boundaries.q3_required_build
-            or request.packet_tracer_build != boundaries.q3_required_build
-            or boundaries.dhcp_product_contract is None
-        ):
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "Q3-FL has no reviewed product contract for this build.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = boundaries.dhcp_product_contract(
-                request.packet_tracer_build, run_id, definition.dhcp_pool_capacity
-            )
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"dhcp_product_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-    elif definition.stage in (QualificationStage.Q3, QualificationStage.D_DHCP):
-        if not boundaries.q3_required_build:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "The Q3 Packet Tracer build policy is not composed.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        if request.packet_tracer_build != boundaries.q3_required_build:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.BUILD,
-                        "Q3 is not implemented for the requested Packet Tracer build.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        if boundaries.q3_product_contract is None:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.NOT_PERMITTED,
-                        RefusalSubject.FIXTURE,
-                        "The executable Q3 product contract is not composed.",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-        try:
-            product_contract = boundaries.q3_product_contract(
-                request.packet_tracer_build, run_id
-            )
-        except Exception as exc:
-            return refused_result(
-                [
-                    refusal(
-                        RefusalKind.MALFORMED,
-                        RefusalSubject.FIXTURE,
-                        f"q3_product_contract:{type(exc).__name__}:{bounded(exc)}",
-                    )
-                ],
-                claim_release=hold.finalize(),
-            )
-
+    product_contract = _product_contract(request, boundaries, definition, run_id)
+    if isinstance(product_contract, QualificationRefusal):
+        return refused_result([product_contract], claim_release=hold.finalize())
     record = initial_record(
         request,
         definition,
@@ -468,7 +292,135 @@ def _with_campaign_claim(
             claim_release=hold.finalize(),
         )
     run = Run(record, boundaries, record_path, diagnostic_lifecycle, hold)
+    return _on_the_channel(
+        run,
+        request,
+        definition,
+        devices,
+        links,
+        experimental_capabilities,
+        product_contract,
+        hold,
+    )
 
+
+def _product_contract(
+    request: QualificationRequest,
+    boundaries: QualificationBoundaries,
+    definition: StageDefinition,
+    run_id: str,
+) -> Q3ProductContract | QualificationRefusal | None:
+    """Compose the stage's product contract, or name why it cannot be composed.
+
+    Only the reviewed exact build composes a product contract, and a
+    composition that raises is a malformed fixture. A stage that needs no
+    product contract resolves to None. The stage families are tried in the
+    order that makes the more specific stage win over its family set.
+    """
+    stage = definition.stage
+    build = request.packet_tracer_build
+    required = boundaries.q3_required_build
+    exact = bool(required) and build == required
+    if stage in SP1_ROUTED_STAGES:
+        sp1 = boundaries.sp1_product_contract
+        if not exact or sp1 is None:
+            return _build_refusal("SP-1 has no reviewed exact-build contract.")
+        return _composed(
+            "sp1_product_contract",
+            lambda: sp1(build, run_id, definition.selected_clients),
+        )
+    if stage is QualificationStage.Q3_NATIVE_PRODUCT:
+        native = boundaries.native_product_contract
+        if (
+            not exact
+            or native is None
+            or (
+                definition.profile_version == "4"
+                and boundaries.execution_mode is ExecutionMode.LIVE
+                and boundaries.native_public_product_entry is None
+            )
+        ):
+            return _build_refusal(
+                "Native product has no reviewed exact-build contract."
+            )
+        return _composed("native_product_contract", lambda: native(build, run_id))
+    if stage is QualificationStage.SP2_REMOTE_RELAY:
+        relay = boundaries.sp2_remote_relay_contract
+        if not exact or relay is None:
+            return _build_refusal("SP-2 remote relay has no exact-build contract.")
+        return _composed("sp2_remote_relay_contract", lambda: relay(build, run_id))
+    if stage in (
+        QualificationStage.SP2_MIXED_PRODUCT,
+        QualificationStage.SP2_CAPACITY_PRODUCT,
+    ):
+        mixed = (
+            boundaries.sp2_capacity_product_contract
+            if stage is QualificationStage.SP2_CAPACITY_PRODUCT
+            else boundaries.sp2_mixed_product_contract
+        )
+        if not exact or mixed is None:
+            return _build_refusal("SP-2 mixed product has no exact-build contract.")
+        return _composed("sp2_mixed_product_contract", lambda: mixed(build, run_id))
+    if stage in (*Q3_FL_STAGES, *Q3_NATIVE_STAGES, *SP2_STAGES):
+        dhcp = boundaries.dhcp_product_contract
+        if not exact or dhcp is None:
+            return _build_refusal(
+                "Q3-FL has no reviewed product contract for this build."
+            )
+        return _composed(
+            "dhcp_product_contract",
+            lambda: dhcp(build, run_id, definition.dhcp_pool_capacity),
+        )
+    if stage in (QualificationStage.Q3, QualificationStage.D_DHCP):
+        if not required:
+            return _build_refusal("The Q3 Packet Tracer build policy is not composed.")
+        if build != required:
+            return _build_refusal(
+                "Q3 is not implemented for the requested Packet Tracer build."
+            )
+        q3 = boundaries.q3_product_contract
+        if q3 is None:
+            return refusal(
+                RefusalKind.NOT_PERMITTED,
+                RefusalSubject.FIXTURE,
+                "The executable Q3 product contract is not composed.",
+            )
+        return _composed("q3_product_contract", lambda: q3(build, run_id))
+    return None
+
+
+def _build_refusal(detail: str) -> QualificationRefusal:
+    """Refuse a stage whose exact-build product composition is unavailable."""
+    return refusal(RefusalKind.NOT_PERMITTED, RefusalSubject.BUILD, detail)
+
+
+def _composed(
+    label: str, compose: Callable[[], Q3ProductContract]
+) -> Q3ProductContract | QualificationRefusal:
+    """Compose one product contract; a composition that raises is malformed."""
+    try:
+        return compose()
+    except Exception as exc:
+        return refusal(
+            RefusalKind.MALFORMED,
+            RefusalSubject.FIXTURE,
+            f"{label}:{type(exc).__name__}:{bounded(exc)}",
+        )
+
+
+def _on_the_channel(
+    run: Run,
+    request: QualificationRequest,
+    definition: StageDefinition,
+    devices: tuple[DevicePlan, ...],
+    links: tuple[LinkPlan, ...],
+    experimental_capabilities: frozenset[str],
+    product_contract: Q3ProductContract | None,
+    hold: CampaignHold,
+) -> QualificationResult:
+    """Open the one authorized channel, run the admitted invocation, close it."""
+    record = run.record
+    boundaries = run.boundaries
     opened: OpenedTransport | None = None
     try:
         try:
@@ -544,6 +496,53 @@ def _admitted(
     *,
     hold: CampaignHold | None = None,
 ) -> QualificationResult:
+    """Read the build and workspace, run the stage's workflow, then finalize."""
+    admitted = _read_admission(run, request, definition, bound)
+    if isinstance(admitted, QualificationResult):
+        return admitted
+    physical, baseline = admitted
+    execution = _start_execution(
+        run,
+        request,
+        definition,
+        devices,
+        links,
+        bound,
+        physical,
+        baseline,
+        capabilities,
+        product_contract,
+        hold,
+    )
+    cancelled = _run_to_finalization(execution)
+    record = run.record
+    run.complete(
+        QualificationOutcome.COMPLETED
+        if _completed(record)
+        else QualificationOutcome.STOPPED
+    )
+    if cancelled is not None:
+        raise cancelled
+    return QualificationResult(
+        outcome=record.outcome,
+        record=record,
+        record_path=run.record_path,
+        claim_release=execution.hold.release_fact,
+    )
+
+
+def _read_admission(
+    run: Run,
+    request: QualificationRequest,
+    definition: StageDefinition,
+    bound: LedgeredTransport,
+) -> tuple[PhysicalTopologyRuntime, PhysicalWorkspaceObservation] | QualificationResult:
+    """Read the executable build and the workspace before any effect.
+
+    Returns the physical runtime and the workspace baseline once both are
+    admitted, the reserve is set and the write-ahead record has advanced, or
+    the refusal result that contact produced without any effect.
+    """
     record = run.record
     ledger = run.ledger
     assert ledger is not None
@@ -629,7 +628,25 @@ def _admitted(
                 "The write-ahead record could not advance before the first effect.",
             )
         )
+    return physical, baseline
 
+
+def _start_execution(
+    run: Run,
+    request: QualificationRequest,
+    definition: StageDefinition,
+    devices: tuple[DevicePlan, ...],
+    links: tuple[LinkPlan, ...],
+    bound: LedgeredTransport,
+    physical: PhysicalTopologyRuntime,
+    baseline: PhysicalWorkspaceObservation,
+    capabilities: frozenset[str],
+    product_contract: Q3ProductContract | None,
+    hold: CampaignHold | None,
+) -> Execution:
+    """Build the invocation's one mutable context over its admitted ledger."""
+    record = run.record
+    boundaries = run.boundaries
     bound.observation_context = {
         "backend": "packet_tracer",
         "source_sha": record.source.executed_sha,
@@ -669,41 +686,18 @@ def _admitted(
         record.limitations.append(
             f"local_process_observation_bounded_seconds:{LOCAL_OBSERVATION_TIMEOUT_SECONDS}"
         )
+    return execution
+
+
+def _run_to_finalization(execution: Execution) -> BaseException | None:
+    """Run the stage's workflow, then always take its terminal reading and finalize.
+
+    Returns the cancellation to re-raise once the record is complete, or None.
+    """
+    record = execution.record
     cancelled: BaseException | None = None
     try:
-        if definition.stage is QualificationStage.Q0:
-            run_q0(execution)
-        elif definition.stage is QualificationStage.Q1:
-            run_q1(execution)
-        elif definition.stage is QualificationStage.D_DHCP:
-            run_d_dhcp(execution)
-        elif definition.stage is QualificationStage.D_WEB:
-            run_d_web(execution)
-        elif definition.stage is QualificationStage.SP2_REMOTE_RELAY:
-            run_sp2_remote_relay(execution)
-        elif definition.stage in (
-            QualificationStage.SP2_MIXED_PRODUCT,
-            QualificationStage.SP2_CAPACITY_PRODUCT,
-        ):
-            run_sp2_mixed_product(execution)
-        elif definition.stage in (*Q3_FL_STAGES, *SP2_STAGES):
-            run_q3_fastloop(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_PROBE:
-            run_q3_native_probe(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_SIZE:
-            run_q3_native_size(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_POLICY:
-            run_q3_native_policy(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_STABILITY:
-            run_q3_native_stability(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_SERVE:
-            run_q3_native_serve(execution)
-        elif definition.stage is QualificationStage.Q3_NATIVE_PRODUCT:
-            run_q3_native_product(execution)
-        elif definition.stage in SP1_ROUTED_STAGES:
-            run_sp1_routed_product(execution)
-        else:
-            run_q3(execution)
+        STAGE_HANDLERS[execution.definition.stage](execution)
     except KeyboardInterrupt as exc:
         execution.cancelled = True
         execution.stop("cancelled")
@@ -731,7 +725,12 @@ def _admitted(
         # the record is completed, so a lock that stayed held is a fact this
         # record carries rather than one that happens after it.
         release_campaign_claim(execution)
-    completed = (
+    return cancelled
+
+
+def _completed(record: QualificationRecord) -> bool:
+    """Return whether a finalized record completes its stage."""
+    return (
         not record.primary_failure
         and record.restoration_proven
         and not record.coordination_residue
@@ -744,14 +743,33 @@ def _admitted(
             if item.required and item.reason != NOT_SELECTED
         )
     )
-    run.complete(
-        QualificationOutcome.COMPLETED if completed else QualificationOutcome.STOPPED
+
+
+#: The workflow each executable stage runs, one explicit handler per stage.
+#: A declarative stage is refused by request admission before any record
+#: exists, so it has no handler.
+STAGE_HANDLERS: Mapping[QualificationStage, Callable[[Execution], object]] = (
+    MappingProxyType(
+        {
+            QualificationStage.Q0: run_q0,
+            QualificationStage.Q1: run_q1,
+            QualificationStage.Q3: run_q3,
+            QualificationStage.D_WEB: run_d_web,
+            QualificationStage.D_DHCP: run_d_dhcp,
+            QualificationStage.Q3_FL_C1: run_q3_fastloop,
+            QualificationStage.Q3_FL_C2: run_q3_fastloop,
+            QualificationStage.SP2_NATIVE_POOL: run_q3_fastloop,
+            QualificationStage.Q3_NATIVE_PROBE: run_q3_native_probe,
+            QualificationStage.Q3_NATIVE_SIZE: run_q3_native_size,
+            QualificationStage.Q3_NATIVE_POLICY: run_q3_native_policy,
+            QualificationStage.Q3_NATIVE_STABILITY: run_q3_native_stability,
+            QualificationStage.Q3_NATIVE_SERVE: run_q3_native_serve,
+            QualificationStage.Q3_NATIVE_PRODUCT: run_q3_native_product,
+            QualificationStage.SP1_ROUTED_W1: run_sp1_routed_product,
+            QualificationStage.SP1_ROUTED_W2: run_sp1_routed_product,
+            QualificationStage.SP2_REMOTE_RELAY: run_sp2_remote_relay,
+            QualificationStage.SP2_MIXED_PRODUCT: run_sp2_mixed_product,
+            QualificationStage.SP2_CAPACITY_PRODUCT: run_sp2_mixed_product,
+        }
     )
-    if cancelled is not None:
-        raise cancelled
-    return QualificationResult(
-        outcome=record.outcome,
-        record=record,
-        record_path=run.record_path,
-        claim_release=execution.hold.release_fact,
-    )
+)

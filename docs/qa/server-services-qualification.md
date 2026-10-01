@@ -10,7 +10,11 @@ recorded in the Server-PT services brief, and Q3-FL-C1 episode 1 in the
 The design, contracts and oracles are in section 12 of the
 [Server-PT services brief](../engineering/change-briefs/server-pt-services.md).
 The runner is `packet_tracer_mcp.adapters.cli.service_qualification`, and its
-use case is `application/use_cases/qualify_server_services.py`.
+use case is the stable entry `application/use_cases/qualify_server_services.py`,
+implemented by `application/server_service_qualification/`: one owner per
+shared control and one module per workflow family, as the
+[qualification architecture brief](../engineering/change-briefs/server-service-qualification-architecture.md)
+records.
 
 ## What a stage is, and what it is not
 

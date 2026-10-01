@@ -2,11 +2,16 @@
 
 Each stage extends the previous one: the start probe, the repeated start and
 capacity, the compiled gateway, DNS and exclusions, the E5 reapplication
-stability check, and the autonomous serving of one client.
+stability check, and the autonomous serving of one client. Serving runs as
+typed phases: preparation of the stable subject, the enable, the client mode
+and the serving window, whose observation, assessment and conclusion are
+separate functions.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from ....domain.enterprise.models.execution import DispatchFact
@@ -27,6 +32,8 @@ from ....domain.enterprise.services.dhcp_lease_evidence import (
     ROW_EXACT,
     ROW_MAC_ELSEWHERE,
     ROW_WRONG_MAC,
+    ClientReading,
+    LeaseScan,
     client_readings,
     is_dotted_mac,
     row_status,
@@ -43,6 +50,7 @@ from ....domain.enterprise.services.service_diagnostic_profiles import (
 from ....domain.enterprise.services.service_qualification_evidence import (
     Assessment,
     DefaultPoolSnapshot,
+    ProbeReading,
     assess_native_policy_address_probe,
     assess_native_policy_exclusion_probe,
     assess_native_pool_max_probe,
@@ -59,13 +67,19 @@ from ...use_cases.apply_configuration import ConfigurationApplicator
 from ...use_cases.foundational_evidence import derive_service_foundational_statuses
 from ..contracts import Q3ProductContract
 from ..dhcp_observations import (
+    DhcpAcquisitionClient,
     DhcpObservationState,
     dhcp_acquisition_clients,
     native_default_snapshot,
     q3_default_read,
 )
 from ..execution import Execution
-from ..fixtures import await_readiness, diagnostic_start, fixture_endpoints
+from ..fixtures import (
+    Readiness,
+    await_readiness,
+    diagnostic_start,
+    fixture_endpoints,
+)
 from ..product_support import (
     exact_inventory_runtimes,
     product_runtime_context,
@@ -379,17 +393,74 @@ def run_q3_native_size(
     return None
 
 
+@dataclass(frozen=True)
+class _AddressSetter:
+    """One compiled address field of the policy stage and its native setter."""
+
+    #: The policy field the setter writes, as the assessment names it.
+    field: str
+    #: The upper-case step name inside measurement, procedure and transition.
+    step: str
+    #: The native setter, as the ledger purpose names it.
+    setter: str
+    #: The read label after the setter, and the stop cause when unsupported.
+    after_label: str
+
+
+_GATEWAY_SETTER = _AddressSetter(
+    "gateway", "GATEWAY", "setDefaultRouter", "after_native_gateway"
+)
+_DNS_SETTER = _AddressSetter("dns", "DNS", "setDnsServerIp", "after_native_dns")
+
+
 def run_q3_native_policy(
     execution: Execution,
 ) -> tuple[ConfigureServerDhcpPool, DefaultPoolSnapshot] | None:
     """Probe compiled gateway, DNS and exclusions on one disabled native pool."""
+    subject = _policy_subject(execution)
+    if subject is None:
+        return None
+    pool_action, size_row, before_gateway = subject
+    gateway_row = {**size_row, "gateway": pool_action.gateway}
+    after_gateway = _policy_address(
+        execution,
+        _GATEWAY_SETTER,
+        lambda: execution.probes.probe_native_pool_gateway(
+            Q3_SERVER, "FastEthernet0", pool_action.gateway
+        ),
+        before=before_gateway,
+        expected_before=size_row,
+        expected_after=gateway_row,
+    )
+    if after_gateway is None:
+        return None
+    dns_row = {**gateway_row, "dns": pool_action.dns_server}
+    after_dns = _policy_address(
+        execution,
+        _DNS_SETTER,
+        lambda: execution.probes.probe_native_pool_dns(
+            Q3_SERVER, "FastEthernet0", pool_action.dns_server
+        ),
+        before=after_gateway,
+        expected_before=gateway_row,
+        expected_after=dns_row,
+    )
+    if after_dns is None:
+        return None
+    return _policy_exclusions(execution, pool_action, dns_row, after_dns)
+
+
+def _policy_subject(
+    execution: Execution,
+) -> tuple[ConfigureServerDhcpPool, dict[str, Any], DefaultPoolSnapshot] | None:
+    """Admit the sized pool and read its disabled policy before any setter."""
     sized = run_q3_native_size(execution)
     if sized is None:
         if not execution.stopped:
             execution.stop("q3_native_policy_size_not_supported")
-        return
+        return None
     if not execution.selected("NATIVE-policy"):
-        return
+        return None
     pool_action, after_max = sized
     size_row = {
         **dict(Q3_NATIVE_START_AFTER),
@@ -402,7 +473,7 @@ def run_q3_native_policy(
         or pool_action.lease_end != size_row["end"]
     ):
         execution.stop("q3_native_policy_intent_differs_from_size_measurement")
-        return
+        return None
     if not native_pool_probe_baseline_admitted(
         after_max,
         server=Q3_SERVER,
@@ -410,7 +481,7 @@ def run_q3_native_policy(
         expected_row=size_row,
     ):
         execution.stop("q3_native_policy_size_readback_not_admitted")
-        return
+        return None
     before_gateway = q3_default_read(
         execution, "before_native_gateway", prefix="q3-native-policy", policy=True
     )
@@ -422,77 +493,66 @@ def run_q3_native_policy(
         expected_exclusions=(),
     ):
         execution.stop("q3_native_policy_baseline_not_admitted")
-        return
-    gateway_row = {**size_row, "gateway": pool_action.gateway}
-    ids = ("M-NATIVE-GATEWAY",)
-    if not execution.begin(ids, "Q3_NATIVE_GATEWAY"):
-        return
+        return None
+    return pool_action, size_row, before_gateway
+
+
+def _policy_address(
+    execution: Execution,
+    setter: _AddressSetter,
+    probe: Callable[[], ProbeReading],
+    *,
+    before: DefaultPoolSnapshot,
+    expected_before: dict[str, Any],
+    expected_after: dict[str, Any],
+) -> DefaultPoolSnapshot | None:
+    """Dispatch one address setter between two policy reads and conclude it.
+
+    Returns the policy read after the setter once its measurement is
+    supported, or None when the stage stops here.
+    """
+    measurement = f"M-NATIVE-{setter.step}"
+    procedure = f"Q3_NATIVE_{setter.step}"
+    purpose = f"q3-native-policy:serverPool:{setter.setter}"
+    ids = (measurement,)
+    if not execution.begin(ids, procedure):
+        return None
     with execution.procedure(ids):
-        if not execution.run.transition("experiment:Q3_NATIVE_GATEWAY_SETTER:started"):
-            execution.stop("persistence:q3_native_gateway_not_announced")
-            return
-        with execution.ledger.effect_of("q3-native-policy:serverPool:setDefaultRouter"):
-            with execution.ledger.purpose_of(
-                "q3-native-policy:serverPool:setDefaultRouter"
-            ):
-                gateway_probe = execution.probes.probe_native_pool_gateway(
-                    Q3_SERVER, "FastEthernet0", pool_action.gateway
-                )
-        after_gateway = q3_default_read(
-            execution, "after_native_gateway", prefix="q3-native-policy", policy=True
+        if not execution.run.transition(f"experiment:{procedure}_SETTER:started"):
+            execution.stop(f"persistence:q3_native_{setter.field}_not_announced")
+            return None
+        with execution.ledger.effect_of(purpose):
+            with execution.ledger.purpose_of(purpose):
+                reading = probe()
+        after = q3_default_read(
+            execution, setter.after_label, prefix="q3-native-policy", policy=True
         )
-        gateway_result = assess_native_policy_address_probe(
-            before=before_gateway,
-            probe=gateway_probe,
-            after=after_gateway,
+        result = assess_native_policy_address_probe(
+            before=before,
+            probe=reading,
+            after=after,
             server=Q3_SERVER,
             interface="FastEthernet0",
-            field="gateway",
-            expected_before=size_row,
-            expected_after=gateway_row,
+            field=setter.field,
+            expected_before=expected_before,
+            expected_after=expected_after,
             expected_exclusions=(),
         )
-        execution.conclude("M-NATIVE-GATEWAY", gateway_result)
-    execution.finish("Q3_NATIVE_GATEWAY")
-    if gateway_result.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
-        execution.stop("q3_native_policy_gateway_not_supported")
-        return
+        execution.conclude(measurement, result)
+    execution.finish(procedure)
+    if result.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
+        execution.stop(f"q3_native_policy_{setter.field}_not_supported")
+        return None
+    return after
 
-    dns_row = {**gateway_row, "dns": pool_action.dns_server}
-    ids = ("M-NATIVE-DNS",)
-    if not execution.begin(ids, "Q3_NATIVE_DNS"):
-        return
-    with execution.procedure(ids):
-        if not execution.run.transition("experiment:Q3_NATIVE_DNS_SETTER:started"):
-            execution.stop("persistence:q3_native_dns_not_announced")
-            return
-        with execution.ledger.effect_of("q3-native-policy:serverPool:setDnsServerIp"):
-            with execution.ledger.purpose_of(
-                "q3-native-policy:serverPool:setDnsServerIp"
-            ):
-                dns_probe = execution.probes.probe_native_pool_dns(
-                    Q3_SERVER, "FastEthernet0", pool_action.dns_server
-                )
-        after_dns = q3_default_read(
-            execution, "after_native_dns", prefix="q3-native-policy", policy=True
-        )
-        dns_result = assess_native_policy_address_probe(
-            before=after_gateway,
-            probe=dns_probe,
-            after=after_dns,
-            server=Q3_SERVER,
-            interface="FastEthernet0",
-            field="dns",
-            expected_before=gateway_row,
-            expected_after=dns_row,
-            expected_exclusions=(),
-        )
-        execution.conclude("M-NATIVE-DNS", dns_result)
-    execution.finish("Q3_NATIVE_DNS")
-    if dns_result.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
-        execution.stop("q3_native_policy_dns_not_supported")
-        return
 
+def _policy_exclusions(
+    execution: Execution,
+    pool_action: ConfigureServerDhcpPool,
+    dns_row: dict[str, Any],
+    after_dns: DefaultPoolSnapshot,
+) -> tuple[ConfigureServerDhcpPool, DefaultPoolSnapshot] | None:
+    """Add each compiled exclusion in order, reading the policy after each one."""
     ranges = [item.model_dump(mode="json") for item in pool_action.excluded_ranges]
     if (
         len(ranges) != 2
@@ -500,10 +560,10 @@ def run_q3_native_policy(
         or ranges[1] != {"start": pool_action.dns_server, "end": pool_action.dns_server}
     ):
         execution.stop("q3_native_policy_exclusions_differ_from_intent")
-        return
+        return None
     ids = ("M-NATIVE-EXCLUSIONS",)
     if not execution.begin(ids, "Q3_NATIVE_EXCLUSIONS"):
-        return
+        return None
     before_exclusion = after_dns
     completed: list[Assessment] = []
     with execution.procedure(ids):
@@ -512,7 +572,7 @@ def run_q3_native_policy(
                 f"experiment:Q3_NATIVE_EXCLUSION_{index}:started"
             ):
                 execution.stop("persistence:q3_native_exclusion_not_announced")
-                return
+                return None
             purpose = f"q3-native-policy:exclude:{index}"
             with execution.ledger.effect_of(purpose):
                 with execution.ledger.purpose_of(purpose):
@@ -700,15 +760,86 @@ def run_q3_native_stability(
     return pool_action, after
 
 
+@dataclass(frozen=True)
+class _ServeSubject:
+    """What the serve stage measures: the stable policy and its two clients."""
+
+    contract: Q3ProductContract
+    pool_action: ConfigureServerDhcpPool
+    #: The complete disabled policy the stability stage last read.
+    before_enable: DefaultPoolSnapshot
+    #: The pool row and exclusions the enabled policy must keep exactly.
+    row: dict[str, Any]
+    exclusions: list[dict[str, Any]]
+    #: The one client the stage activates, and the one that stays inactive.
+    client: DhcpAcquisitionClient
+    inactive_client: DhcpAcquisitionClient
+
+    @property
+    def client_pairs(self) -> tuple[tuple[str, str], tuple[str, str]]:
+        """Return both clients' (device, interface) pairs, active one first."""
+        return (
+            (self.client.name, self.client.interface),
+            (self.inactive_client.name, self.inactive_client.interface),
+        )
+
+    def policy_exact(self, snapshot: DefaultPoolSnapshot) -> bool:
+        """Whether one reading is the enabled policy with this exact row."""
+        return native_policy_enabled_admitted(
+            snapshot,
+            server=Q3_SERVER,
+            interface="FastEthernet0",
+            expected_row=self.row,
+            expected_exclusions=self.exclusions,
+        )
+
+
+@dataclass(frozen=True)
+class _ServingSample:
+    """One serving-window sample: client, inactive client, pools and policy."""
+
+    facts: dict[str, Any]
+    ready: bool
+    current: ClientReading
+    inactive_now: ClientReading
+    inactive_ok: bool
+    native: LeaseScan
+    named: LeaseScan
+    policy_now: DefaultPoolSnapshot
+    policy_exact: bool
+    row_state: str
+    wrong_port: bool
+
+
 def run_q3_native_serve(execution: Execution) -> None:
-    """Test one autonomous client against the exact enabled physical pool."""
+    """Test one autonomous client against the exact enabled physical pool.
+
+    Preparation binds the stable disabled policy and the two clients; the
+    enable, client-mode and serving procedures then each conclude their own
+    measurement, and the first one that is not supported stops the stage.
+    """
+    subject = _serve_subject(execution)
+    if subject is None:
+        return
+    prior_clients = _serve_enable(execution, subject)
+    if prior_clients is None:
+        return
+    before_mode = _serve_client_mode(execution, subject, prior_clients)
+    if before_mode is None:
+        return
+    prior, prior_inactive = before_mode
+    _serve_window(execution, subject, prior, prior_inactive)
+
+
+def _serve_subject(execution: Execution) -> _ServeSubject | None:
+    """Prepare the serve stage from a stable policy and an unambiguous binding."""
     stable = run_q3_native_stability(execution)
     if stable is None:
         if not execution.stopped:
             execution.stop("q3_native_serve_stability_not_supported")
-        return
+        return None
     if not execution.selected("NATIVE-serve"):
-        return
+        return None
     pool_action, before_enable = stable
     row = {
         **dict(Q3_NATIVE_START_AFTER),
@@ -726,11 +857,11 @@ def run_q3_native_serve(execution: Execution) -> None:
         expected_exclusions=exclusions,
     ):
         execution.stop("q3_native_serve_disabled_policy_not_admitted")
-        return
+        return None
     contract = execution.product_contract
     if contract is None:
         execution.stop("q3_native_serve_product_contract_absent")
-        return
+        return None
     clients = [
         item
         for item in dhcp_acquisition_clients(contract)
@@ -738,24 +869,46 @@ def run_q3_native_serve(execution: Execution) -> None:
     ]
     if len(clients) != 2 or {item.name for item in clients} != {Q3_PC1, Q3_PC2}:
         execution.stop("q3_native_serve_client_binding_ambiguous")
-        return
+        return None
     by_name = {item.name: item for item in clients}
-    client = by_name[Q3_PC1]
-    inactive_client = by_name[Q3_PC2]
-    client_pairs = (
-        (client.name, client.interface),
-        (inactive_client.name, inactive_client.interface),
+    return _ServeSubject(
+        contract=contract,
+        pool_action=pool_action,
+        before_enable=before_enable,
+        row=row,
+        exclusions=exclusions,
+        client=by_name[Q3_PC1],
+        inactive_client=by_name[Q3_PC2],
     )
+
+
+def _clients_by_name(
+    subject: _ServeSubject, read: ProbeReading
+) -> dict[str, ClientReading]:
+    """Return both clients' typed readings from one bounded client read."""
+    return client_readings(
+        read.payload if read.observed else {},
+        (subject.client.name, subject.inactive_client.name),
+    )
+
+
+def _serve_enable(
+    execution: Execution, subject: _ServeSubject
+) -> dict[str, ClientReading] | None:
+    """Enable the process on the exact policy while both clients are inactive.
+
+    Returns both clients' prior readings once the enable is supported, or
+    None when the stage stops here.
+    """
     ids = ("M-NATIVE-ENABLE",)
     if not execution.begin(ids, "Q3_NATIVE_ENABLE"):
-        return
+        return None
     with execution.procedure(ids):
         with execution.ledger.purpose_of("q3-native-serve:clients:before_enable"):
-            prior_clients_read = execution.probes.read_dhcp_clients(client_pairs)
-        prior_clients = client_readings(
-            prior_clients_read.payload if prior_clients_read.observed else {},
-            (client.name, inactive_client.name),
-        )
+            prior_clients_read = execution.probes.read_dhcp_clients(
+                subject.client_pairs
+            )
+        prior_clients = _clients_by_name(subject, prior_clients_read)
         clients_clear = all(
             item.observed
             and item.mode is False
@@ -778,68 +931,90 @@ def run_q3_native_serve(execution: Execution) -> None:
                 ),
             )
             execution.stop("q3_native_serve_clients_not_inactive")
-            return
+            return None
         if not execution.run.transition("experiment:Q3_NATIVE_ENABLE:started"):
             execution.stop("persistence:q3_native_enable_not_announced")
-            return
+            return None
         with execution.ledger.effect_of("q3-native-serve:serverPool:setEnable"):
             with execution.ledger.purpose_of("q3-native-serve:serverPool:setEnable"):
                 probe = execution.probes.probe_native_server_enable(
-                    Q3_SERVER, "FastEthernet0", row, exclusions, client_pairs
+                    Q3_SERVER,
+                    "FastEthernet0",
+                    subject.row,
+                    subject.exclusions,
+                    subject.client_pairs,
                 )
         enabled = q3_default_read(
             execution, "after_native_enable", prefix="q3-native-serve", policy=True
         )
-        payload = probe.payload if probe.observed else {}
-        policy_ok = native_policy_enabled_admitted(
-            enabled,
-            server=Q3_SERVER,
-            interface="FastEthernet0",
-            expected_row=row,
-            expected_exclusions=exclusions,
-        )
-        enabled_ok = (
-            probe.observed
-            and payload.get("device") == Q3_SERVER
-            and payload.get("interface") == "FastEthernet0"
-            and payload.get("found") is True
-            and payload.get("policy_match") is True
-            and payload.get("clients_clear") is True
-            and payload.get("attempted") is True
-            and payload.get("call_error") == ""
-            and payload.get("pre_enabled") is False
-            and payload.get("post_enabled") is True
-            and policy_ok
-        )
-        assessment = Assessment(
-            MeasurementConclusion.SUPPORTED_IN_SAMPLE
-            if enabled_ok
-            else MeasurementConclusion.INCONCLUSIVE
-            if not probe.observed or not enabled.observed or payload.get("call_error")
-            else MeasurementConclusion.CONTRADICTED,
-            facts={
-                "before": dict(before_enable.raw),
-                "prior_clients": {
-                    name: item.__dict__ for name, item in prior_clients.items()
-                },
-                "probe": dict(payload),
-                "after": dict(enabled.raw),
-                "policy_exact": policy_ok,
-            },
-            causes=[] if enabled_ok else ["native_enable_unobserved_or_policy_changed"],
-            outcome_unknown=not probe.observed
-            or (payload.get("attempted") is True and bool(payload.get("call_error"))),
-            limitations=["enable_does_not_establish_client_serving"],
-        )
+        assessment = _enable_assessment(subject, prior_clients, probe, enabled)
         execution.conclude("M-NATIVE-ENABLE", assessment)
     execution.finish("Q3_NATIVE_ENABLE")
     if assessment.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
         execution.stop("q3_native_serve_enable_not_supported")
-        return
+        return None
+    return prior_clients
 
+
+def _enable_assessment(
+    subject: _ServeSubject,
+    prior_clients: dict[str, ClientReading],
+    probe: ProbeReading,
+    enabled: DefaultPoolSnapshot,
+) -> Assessment:
+    """Judge the enable from its probe report and the policy read after it."""
+    payload = probe.payload if probe.observed else {}
+    policy_ok = subject.policy_exact(enabled)
+    enabled_ok = (
+        probe.observed
+        and payload.get("device") == Q3_SERVER
+        and payload.get("interface") == "FastEthernet0"
+        and payload.get("found") is True
+        and payload.get("policy_match") is True
+        and payload.get("clients_clear") is True
+        and payload.get("attempted") is True
+        and payload.get("call_error") == ""
+        and payload.get("pre_enabled") is False
+        and payload.get("post_enabled") is True
+        and policy_ok
+    )
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if enabled_ok
+        else MeasurementConclusion.INCONCLUSIVE
+        if not probe.observed or not enabled.observed or payload.get("call_error")
+        else MeasurementConclusion.CONTRADICTED,
+        facts={
+            "before": dict(subject.before_enable.raw),
+            "prior_clients": {
+                name: item.__dict__ for name, item in prior_clients.items()
+            },
+            "probe": dict(payload),
+            "after": dict(enabled.raw),
+            "policy_exact": policy_ok,
+        },
+        causes=[] if enabled_ok else ["native_enable_unobserved_or_policy_changed"],
+        outcome_unknown=not probe.observed
+        or (payload.get("attempted") is True and bool(payload.get("call_error"))),
+        limitations=["enable_does_not_establish_client_serving"],
+    )
+
+
+def _serve_client_mode(
+    execution: Execution,
+    subject: _ServeSubject,
+    prior_clients: dict[str, ClientReading],
+) -> tuple[ClientReading, ClientReading] | None:
+    """Put the one client in DHCP mode through its compiled action.
+
+    Returns the active and inactive clients' readings from before the mode
+    change once it is supported, or None when the stage stops here.
+    """
+    client = subject.client
+    inactive_client = subject.inactive_client
     ids = ("M-NATIVE-MODE",)
     if not execution.begin(ids, "Q3_NATIVE_MODE"):
-        return
+        return None
     with execution.procedure(ids):
         endpoints = fixture_endpoints(execution)
         readiness = await_readiness(
@@ -858,13 +1033,10 @@ def run_q3_native_serve(execution: Execution) -> None:
                 ),
             )
             execution.stop("q3_native_client_forwarding_unobserved")
-            return
+            return None
         with execution.ledger.purpose_of("q3-native-serve:client:before_mode"):
-            prior_read = execution.probes.read_dhcp_clients(client_pairs)
-        before_mode_clients = client_readings(
-            prior_read.payload if prior_read.observed else {},
-            (client.name, inactive_client.name),
-        )
+            prior_read = execution.probes.read_dhcp_clients(subject.client_pairs)
+        before_mode_clients = _clients_by_name(subject, prior_read)
         prior = before_mode_clients[client.name]
         prior_inactive = before_mode_clients[inactive_client.name]
         before_mode_policy = q3_default_read(
@@ -873,30 +1045,13 @@ def run_q3_native_serve(execution: Execution) -> None:
             prefix="q3-native-serve",
             policy=True,
         )
-        if (
-            not prior.observed
-            or prior.mode is not False
-            or prior.ipv4 not in {"", "0.0.0.0"}
-            or prior.netmask not in {"", "0.0.0.0"}
-            or not is_dotted_mac(prior.mac)
-            or not prior_inactive.observed
-            or prior_inactive.mode is not False
-            or prior_inactive.ipv4 not in {"", "0.0.0.0"}
-            or prior_inactive.netmask not in {"", "0.0.0.0"}
-            or prior_inactive.mac != prior_clients[inactive_client.name].mac
-            or prior.mac != prior_clients[client.name].mac
-            or not native_policy_enabled_admitted(
-                before_mode_policy,
-                server=Q3_SERVER,
-                interface="FastEthernet0",
-                expected_row=row,
-                expected_exclusions=exclusions,
-            )
+        if not _mode_precondition(
+            subject, prior_clients, prior, prior_inactive, before_mode_policy
         ):
             execution.stop("q3_native_serve_client_mode_precondition_unobserved")
-            return
+            return None
         plan = q3_fastloop_client_mode_plan(
-            contract.configuration_plan, device_names=(client.name,)
+            subject.contract.configuration_plan, device_names=(client.name,)
         )
         if (
             len(plan.actions) != 1
@@ -905,10 +1060,10 @@ def run_q3_native_serve(execution: Execution) -> None:
             or plan.actions[0].interface != client.interface
         ):
             execution.stop("q3_native_serve_client_mode_action_ambiguous")
-            return
+            return None
         if not execution.run.transition("experiment:Q3_NATIVE_MODE_PROBE:started"):
             execution.stop("persistence:q3_native_mode_not_announced")
-            return
+            return None
         with execution.ledger.effect_of("q3-native-serve:compiled-client-mode"):
             with execution.ledger.purpose_of("q3-native-serve:compiled-client-mode"):
                 mode_probe = execution.probes.probe_native_client_mode(
@@ -916,108 +1071,155 @@ def run_q3_native_serve(execution: Execution) -> None:
                     "FastEthernet0",
                     client.name,
                     client.interface,
-                    row,
-                    exclusions,
+                    subject.row,
+                    subject.exclusions,
                     ((inactive_client.name, inactive_client.interface),),
                 )
-        probe_payload = mode_probe.payload if mode_probe.observed else {}
-        probe_exact = (
-            mode_probe.observed
-            and probe_payload.get("server") == Q3_SERVER
-            and probe_payload.get("server_interface") == "FastEthernet0"
-            and probe_payload.get("client") == client.name
-            and probe_payload.get("client_interface") == client.interface
-            and probe_payload.get("policy_match") is True
-            and probe_payload.get("inactive_clients_clear") is True
-            and probe_payload.get("client_found") is True
-            and probe_payload.get("attempted") is True
-            and probe_payload.get("call_error") == ""
-            and probe_payload.get("pre_mode") is False
-            and probe_payload.get("post_mode") is True
-        )
         with execution.ledger.purpose_of("q3-native-serve:client:after_mode"):
-            after_read = execution.probes.read_dhcp_clients(client_pairs)
-        after_clients = client_readings(
-            after_read.payload if after_read.observed else {},
-            (client.name, inactive_client.name),
-        )
-        after_client = after_clients[client.name]
-        after_inactive = after_clients[inactive_client.name]
+            after_read = execution.probes.read_dhcp_clients(subject.client_pairs)
+        after_clients = _clients_by_name(subject, after_read)
         after_mode_policy = q3_default_read(
             execution, "after_native_client_mode", prefix="q3-native-serve", policy=True
         )
-        mode_ok = (
-            probe_exact
-            and after_client.observed
-            and after_client.mode is True
-            and after_client.mac == prior.mac
-            and after_inactive.observed
-            and after_inactive.mode is False
-            and after_inactive.ipv4 in {"", "0.0.0.0"}
-            and after_inactive.netmask in {"", "0.0.0.0"}
-            and after_inactive.mac == prior_inactive.mac
-            and native_policy_enabled_admitted(
-                after_mode_policy,
-                server=Q3_SERVER,
-                interface="FastEthernet0",
-                expected_row=row,
-                expected_exclusions=exclusions,
-            )
-        )
-        mode_policy_contradicted = (
-            after_mode_policy.observed
-            and native_policy_exclusion_inventory_complete(after_mode_policy)
-            and not native_policy_enabled_admitted(
-                after_mode_policy,
-                server=Q3_SERVER,
-                interface="FastEthernet0",
-                expected_row=row,
-                expected_exclusions=exclusions,
-            )
-        )
-        inactive_client_contradicted = after_inactive.observed and (
-            after_inactive.mode is not False
-            or after_inactive.ipv4 not in {"", "0.0.0.0"}
-            or after_inactive.netmask not in {"", "0.0.0.0"}
-            or after_inactive.mac != prior_inactive.mac
-        )
-        mode_assessment = Assessment(
-            MeasurementConclusion.SUPPORTED_IN_SAMPLE
-            if mode_ok
-            else MeasurementConclusion.CONTRADICTED
-            if (mode_policy_contradicted or inactive_client_contradicted)
-            and mode_probe.observed
-            else MeasurementConclusion.INCONCLUSIVE,
-            facts={
-                "before_client": prior.__dict__,
-                "after_client": after_client.__dict__,
-                "before_inactive_client": prior_inactive.__dict__,
-                "after_inactive_client": after_inactive.__dict__,
-                "before_policy": dict(before_mode_policy.raw),
-                "after_policy": dict(after_mode_policy.raw),
-                "compiled_action_id": plan.actions[0].id,
-                "probe": dict(probe_payload),
-                "readiness": readiness.facts(),
-            },
-            causes=[]
-            if mode_ok
-            else [
-                f"mode_probe_unobserved:{mode_probe.cause}"
-                if not mode_probe.observed
-                else "client_mode_guard_or_policy_not_established"
-            ],
-            outcome_unknown=not mode_probe.observed
-            or (
-                probe_payload.get("attempted") is True
-                and bool(probe_payload.get("call_error"))
-            ),
+        mode_assessment = _mode_assessment(
+            subject,
+            plan.actions[0].id,
+            readiness,
+            mode_probe,
+            (prior, prior_inactive),
+            (after_clients[client.name], after_clients[inactive_client.name]),
+            before_mode_policy,
+            after_mode_policy,
         )
         execution.conclude("M-NATIVE-MODE", mode_assessment)
     execution.finish("Q3_NATIVE_MODE")
     if mode_assessment.conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
         execution.stop("q3_native_serve_mode_not_supported")
-        return
+        return None
+    return prior, prior_inactive
 
+
+def _mode_precondition(
+    subject: _ServeSubject,
+    prior_clients: dict[str, ClientReading],
+    prior: ClientReading,
+    prior_inactive: ClientReading,
+    policy: DefaultPoolSnapshot,
+) -> bool:
+    """Whether both clients are still the unbound ones and the policy is exact."""
+    return not (
+        not prior.observed
+        or prior.mode is not False
+        or prior.ipv4 not in {"", "0.0.0.0"}
+        or prior.netmask not in {"", "0.0.0.0"}
+        or not is_dotted_mac(prior.mac)
+        or not prior_inactive.observed
+        or prior_inactive.mode is not False
+        or prior_inactive.ipv4 not in {"", "0.0.0.0"}
+        or prior_inactive.netmask not in {"", "0.0.0.0"}
+        or prior_inactive.mac != prior_clients[subject.inactive_client.name].mac
+        or prior.mac != prior_clients[subject.client.name].mac
+        or not subject.policy_exact(policy)
+    )
+
+
+def _mode_assessment(
+    subject: _ServeSubject,
+    compiled_action_id: str,
+    readiness: Readiness,
+    mode_probe: ProbeReading,
+    before: tuple[ClientReading, ClientReading],
+    after: tuple[ClientReading, ClientReading],
+    before_mode_policy: DefaultPoolSnapshot,
+    after_mode_policy: DefaultPoolSnapshot,
+) -> Assessment:
+    """Judge the mode change from its guard report and both sides read after it."""
+    client = subject.client
+    prior, prior_inactive = before
+    after_client, after_inactive = after
+    probe_payload = mode_probe.payload if mode_probe.observed else {}
+    probe_exact = (
+        mode_probe.observed
+        and probe_payload.get("server") == Q3_SERVER
+        and probe_payload.get("server_interface") == "FastEthernet0"
+        and probe_payload.get("client") == client.name
+        and probe_payload.get("client_interface") == client.interface
+        and probe_payload.get("policy_match") is True
+        and probe_payload.get("inactive_clients_clear") is True
+        and probe_payload.get("client_found") is True
+        and probe_payload.get("attempted") is True
+        and probe_payload.get("call_error") == ""
+        and probe_payload.get("pre_mode") is False
+        and probe_payload.get("post_mode") is True
+    )
+    mode_ok = (
+        probe_exact
+        and after_client.observed
+        and after_client.mode is True
+        and after_client.mac == prior.mac
+        and after_inactive.observed
+        and after_inactive.mode is False
+        and after_inactive.ipv4 in {"", "0.0.0.0"}
+        and after_inactive.netmask in {"", "0.0.0.0"}
+        and after_inactive.mac == prior_inactive.mac
+        and subject.policy_exact(after_mode_policy)
+    )
+    mode_policy_contradicted = (
+        after_mode_policy.observed
+        and native_policy_exclusion_inventory_complete(after_mode_policy)
+        and not subject.policy_exact(after_mode_policy)
+    )
+    inactive_client_contradicted = after_inactive.observed and (
+        after_inactive.mode is not False
+        or after_inactive.ipv4 not in {"", "0.0.0.0"}
+        or after_inactive.netmask not in {"", "0.0.0.0"}
+        or after_inactive.mac != prior_inactive.mac
+    )
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if mode_ok
+        else MeasurementConclusion.CONTRADICTED
+        if (mode_policy_contradicted or inactive_client_contradicted)
+        and mode_probe.observed
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts={
+            "before_client": prior.__dict__,
+            "after_client": after_client.__dict__,
+            "before_inactive_client": prior_inactive.__dict__,
+            "after_inactive_client": after_inactive.__dict__,
+            "before_policy": dict(before_mode_policy.raw),
+            "after_policy": dict(after_mode_policy.raw),
+            "compiled_action_id": compiled_action_id,
+            "probe": dict(probe_payload),
+            "readiness": readiness.facts(),
+        },
+        causes=[]
+        if mode_ok
+        else [
+            f"mode_probe_unobserved:{mode_probe.cause}"
+            if not mode_probe.observed
+            else "client_mode_guard_or_policy_not_established"
+        ],
+        outcome_unknown=not mode_probe.observed
+        or (
+            probe_payload.get("attempted") is True
+            and bool(probe_payload.get("call_error"))
+        ),
+    )
+
+
+def _serve_window(
+    execution: Execution,
+    subject: _ServeSubject,
+    prior: ClientReading,
+    prior_inactive: ClientReading,
+) -> None:
+    """Sample the serving window until two consecutive exact matches, or a stop.
+
+    At most thirteen samples, each three reads the phase must still afford and
+    ten seconds apart. A contradiction ends the window at once; a window that
+    ends without one is inconclusive when any sample left something unread.
+    """
     ids = ("M-NATIVE-SERVE",)
     if not execution.begin(ids, "Q3_NATIVE_SERVE"):
         return
@@ -1034,175 +1236,17 @@ def run_q3_native_serve(execution: Execution) -> None:
                 if not execution.ledger.can_afford(3):
                     conclusion = MeasurementConclusion.INCONCLUSIVE
                     break
-            with execution.ledger.purpose_of(f"q3-native-serve:client:{index}"):
-                client_read = execution.probes.read_dhcp_clients(client_pairs)
-            current_clients = client_readings(
-                client_read.payload if client_read.observed else {},
-                (client.name, inactive_client.name),
-            )
-            current = current_clients[client.name]
-            inactive_now = current_clients[inactive_client.name]
-            inactive_ok = (
-                inactive_now.observed
-                and inactive_now.mode is False
-                and inactive_now.ipv4 in {"", "0.0.0.0"}
-                and inactive_now.netmask in {"", "0.0.0.0"}
-                and inactive_now.mac == prior_inactive.mac
-            )
-            with execution.ledger.purpose_of(f"q3-native-serve:lease_scan:{index}"):
-                scan_read = execution.probes.read_dhcp_lease_calibration(
-                    Q3_SERVER,
-                    "FastEthernet0",
-                    (("serverPool", 4), (Q3_POOL, 2)),
-                )
-            scan_payload = scan_read.payload if scan_read.observed else {}
-            subject_ok = (
-                scan_read.observed
-                and scan_payload.get("device") == Q3_SERVER
-                and scan_payload.get("interface") == "FastEthernet0"
-                and scan_payload.get("found") is True
-                and scan_payload.get("process_found") is True
-                and not scan_payload.get("error")
-            )
-            scans = (
-                scans_by_pool(scan_payload, ("serverPool", Q3_POOL))
-                if subject_ok
-                else unobserved_scans(("serverPool", Q3_POOL), "subject_unobserved")
-            )
-            native = scans["serverPool"]
-            named = scans[Q3_POOL]
-            policy_now = q3_default_read(
-                execution,
-                f"native_serving_{index}",
-                prefix="q3-native-serve",
-                policy=True,
-            )
-            policy_exact = native_policy_enabled_admitted(
-                policy_now,
-                server=Q3_SERVER,
-                interface="FastEthernet0",
-                expected_row=row,
-                expected_exclusions=exclusions,
-            )
-            exact_rows = [
-                item
-                for item in native.rows_with_ip(current.ipv4)
-                if item.mac == current.mac and item.port == client.interface
-            ]
-            row_state = row_status(native, current, None)
-            wrong_port = any(
-                item.mac == current.mac and item.port != client.interface
-                for item in native.rows_with_ip(current.ipv4)
-            )
-            ready = (
-                current.observed
-                and current.mode is True
-                and current.ipv4 == pool_action.lease_start
-                and current.netmask == pool_action.netmask
-                and current.mac == prior.mac
-                and native.observed
-                and native.capacity == 1
-                and row_state == ROW_EXACT
-                and len(exact_rows) == 1
-                and len(native.rows) == 1
-                and named.observed
-                and named.cause == "pool_absent"
-                and policy_exact
-                and inactive_ok
-            )
-            samples.append(
-                {
-                    "index": index,
-                    "client": current.__dict__,
-                    "inactive_client": inactive_now.__dict__,
-                    "inactive_ok": inactive_ok,
-                    "native": native.as_facts(),
-                    "named": named.as_facts(),
-                    "policy": dict(policy_now.raw),
-                    "policy_observed": policy_now.observed,
-                    "policy_exclusions_complete": native_policy_exclusion_inventory_complete(
-                        policy_now
-                    ),
-                    "policy_exact": policy_exact,
-                    "row_status": row_state,
-                    "wrong_port": wrong_port,
-                    "ready": ready,
-                }
-            )
-            consecutive = consecutive + 1 if ready else 0
+            sample = _serving_sample(execution, subject, index, prior, prior_inactive)
+            samples.append(sample.facts)
+            consecutive = consecutive + 1 if sample.ready else 0
             if consecutive >= 2:
                 conclusion = MeasurementConclusion.SUPPORTED_IN_SAMPLE
                 break
-            if named.observed and named.cause != "pool_absent":
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if (
-                policy_now.observed
-                and native_policy_exclusion_inventory_complete(policy_now)
-                and not policy_exact
-            ):
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if current.observed and (
-                current.mode is not True or current.mac != prior.mac
-            ):
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if inactive_now.observed and not inactive_ok:
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if row_state in {ROW_WRONG_MAC, ROW_MAC_ELSEWHERE} or wrong_port:
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if (
-                native.observed
-                and native.capacity is not None
-                and len(native.rows) > native.capacity
-            ):
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if (
-                current.observed
-                and current.mode is True
-                and current.ipv4
-                not in (
-                    "",
-                    "0.0.0.0",
-                    pool_action.lease_start,
-                )
-            ):
-                conclusion = MeasurementConclusion.CONTRADICTED
-                break
-            if (
-                current.observed
-                and current.mode is True
-                and current.ipv4 == pool_action.lease_start
-                and current.netmask != pool_action.netmask
-            ):
+            if _serving_contradicted(subject, sample, prior):
                 conclusion = MeasurementConclusion.CONTRADICTED
                 break
         else:
-            in_policy_unattributed = any(
-                item["client"]["observed"]
-                and item["client"]["mode"] is True
-                and item["client"]["ipv4"] == pool_action.lease_start
-                and item["client"]["netmask"] == pool_action.netmask
-                and not item["ready"]
-                for item in samples
-            )
-            if (
-                in_policy_unattributed
-                or not samples
-                or any(
-                    not item["client"]["observed"]
-                    or not item["native"]["observed"]
-                    or not item["named"]["observed"]
-                    or not item["policy_observed"]
-                    or not item["policy_exclusions_complete"]
-                    or not item["inactive_client"]["observed"]
-                    for item in samples
-                )
-            ):
+            if _serving_window_unresolved(subject, samples):
                 conclusion = MeasurementConclusion.INCONCLUSIVE
         execution.conclude(
             "M-NATIVE-SERVE",
@@ -1221,3 +1265,193 @@ def run_q3_native_serve(execution: Execution) -> None:
     execution.finish("Q3_NATIVE_SERVE")
     if conclusion is not MeasurementConclusion.SUPPORTED_IN_SAMPLE:
         execution.stop("q3_native_serve_not_supported")
+
+
+def _serving_sample(
+    execution: Execution,
+    subject: _ServeSubject,
+    index: int,
+    prior: ClientReading,
+    prior_inactive: ClientReading,
+) -> _ServingSample:
+    """Read both clients, both pools and the policy once, and classify them."""
+    client = subject.client
+    pool_action = subject.pool_action
+    with execution.ledger.purpose_of(f"q3-native-serve:client:{index}"):
+        client_read = execution.probes.read_dhcp_clients(subject.client_pairs)
+    current_clients = _clients_by_name(subject, client_read)
+    current = current_clients[client.name]
+    inactive_now = current_clients[subject.inactive_client.name]
+    inactive_ok = (
+        inactive_now.observed
+        and inactive_now.mode is False
+        and inactive_now.ipv4 in {"", "0.0.0.0"}
+        and inactive_now.netmask in {"", "0.0.0.0"}
+        and inactive_now.mac == prior_inactive.mac
+    )
+    with execution.ledger.purpose_of(f"q3-native-serve:lease_scan:{index}"):
+        scan_read = execution.probes.read_dhcp_lease_calibration(
+            Q3_SERVER,
+            "FastEthernet0",
+            (("serverPool", 4), (Q3_POOL, 2)),
+        )
+    scan_payload = scan_read.payload if scan_read.observed else {}
+    subject_ok = (
+        scan_read.observed
+        and scan_payload.get("device") == Q3_SERVER
+        and scan_payload.get("interface") == "FastEthernet0"
+        and scan_payload.get("found") is True
+        and scan_payload.get("process_found") is True
+        and not scan_payload.get("error")
+    )
+    scans = (
+        scans_by_pool(scan_payload, ("serverPool", Q3_POOL))
+        if subject_ok
+        else unobserved_scans(("serverPool", Q3_POOL), "subject_unobserved")
+    )
+    native = scans["serverPool"]
+    named = scans[Q3_POOL]
+    policy_now = q3_default_read(
+        execution,
+        f"native_serving_{index}",
+        prefix="q3-native-serve",
+        policy=True,
+    )
+    policy_exact = subject.policy_exact(policy_now)
+    exact_rows = [
+        item
+        for item in native.rows_with_ip(current.ipv4)
+        if item.mac == current.mac and item.port == client.interface
+    ]
+    row_state = row_status(native, current, None)
+    wrong_port = any(
+        item.mac == current.mac and item.port != client.interface
+        for item in native.rows_with_ip(current.ipv4)
+    )
+    ready = (
+        current.observed
+        and current.mode is True
+        and current.ipv4 == pool_action.lease_start
+        and current.netmask == pool_action.netmask
+        and current.mac == prior.mac
+        and native.observed
+        and native.capacity == 1
+        and row_state == ROW_EXACT
+        and len(exact_rows) == 1
+        and len(native.rows) == 1
+        and named.observed
+        and named.cause == "pool_absent"
+        and policy_exact
+        and inactive_ok
+    )
+    facts = {
+        "index": index,
+        "client": current.__dict__,
+        "inactive_client": inactive_now.__dict__,
+        "inactive_ok": inactive_ok,
+        "native": native.as_facts(),
+        "named": named.as_facts(),
+        "policy": dict(policy_now.raw),
+        "policy_observed": policy_now.observed,
+        "policy_exclusions_complete": native_policy_exclusion_inventory_complete(
+            policy_now
+        ),
+        "policy_exact": policy_exact,
+        "row_status": row_state,
+        "wrong_port": wrong_port,
+        "ready": ready,
+    }
+    return _ServingSample(
+        facts=facts,
+        ready=ready,
+        current=current,
+        inactive_now=inactive_now,
+        inactive_ok=inactive_ok,
+        native=native,
+        named=named,
+        policy_now=policy_now,
+        policy_exact=policy_exact,
+        row_state=row_state,
+        wrong_port=wrong_port,
+    )
+
+
+def _serving_contradicted(
+    subject: _ServeSubject, sample: _ServingSample, prior: ClientReading
+) -> bool:
+    """Whether one sample contradicts autonomous serving from the exact pool.
+
+    A named pool that exists, a changed complete policy, a client that left
+    DHCP mode or changed its MAC, an inactive client that moved, a lease row
+    on the wrong MAC or port, a pool above its capacity, or an in-mode client
+    address outside the one-address window, or with the wrong mask.
+    """
+    pool_action = subject.pool_action
+    current = sample.current
+    native = sample.native
+    return bool(
+        (sample.named.observed and sample.named.cause != "pool_absent")
+        or (
+            sample.policy_now.observed
+            and native_policy_exclusion_inventory_complete(sample.policy_now)
+            and not sample.policy_exact
+        )
+        or (current.observed and (current.mode is not True or current.mac != prior.mac))
+        or (sample.inactive_now.observed and not sample.inactive_ok)
+        or sample.row_state in {ROW_WRONG_MAC, ROW_MAC_ELSEWHERE}
+        or sample.wrong_port
+        or (
+            native.observed
+            and native.capacity is not None
+            and len(native.rows) > native.capacity
+        )
+        or (
+            current.observed
+            and current.mode is True
+            and current.ipv4
+            not in (
+                "",
+                "0.0.0.0",
+                pool_action.lease_start,
+            )
+        )
+        or (
+            current.observed
+            and current.mode is True
+            and current.ipv4 == pool_action.lease_start
+            and current.netmask != pool_action.netmask
+        )
+    )
+
+
+def _serving_window_unresolved(
+    subject: _ServeSubject, samples: list[dict[str, Any]]
+) -> bool:
+    """Whether a full window without a verdict still left something unread.
+
+    An in-policy address that was never attributed, an empty window, or any
+    sample with an unread client, pool, policy or exclusion inventory makes
+    the window inconclusive rather than a negative observation.
+    """
+    pool_action = subject.pool_action
+    in_policy_unattributed = any(
+        item["client"]["observed"]
+        and item["client"]["mode"] is True
+        and item["client"]["ipv4"] == pool_action.lease_start
+        and item["client"]["netmask"] == pool_action.netmask
+        and not item["ready"]
+        for item in samples
+    )
+    return bool(
+        in_policy_unattributed
+        or not samples
+        or any(
+            not item["client"]["observed"]
+            or not item["native"]["observed"]
+            or not item["named"]["observed"]
+            or not item["policy_observed"]
+            or not item["policy_exclusions_complete"]
+            or not item["inactive_client"]["observed"]
+            for item in samples
+        )
+    )

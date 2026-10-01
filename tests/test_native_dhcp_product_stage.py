@@ -218,7 +218,7 @@ def _run(
         )
     if inject_partial_product:
         qualifier = import_module(
-            "packet_tracer_mcp.application.server_service_qualification.workflows.native_product"
+            "packet_tracer_mcp.application.server_service_qualification.product_support"
         )
         real_apply = qualifier.apply_enterprise_services
 

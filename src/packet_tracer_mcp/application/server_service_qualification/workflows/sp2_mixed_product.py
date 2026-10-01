@@ -1,4 +1,10 @@
-"""SP-2: local native and relayed named pools through the product, privately."""
+"""SP-2: local native and relayed named pools through the product, privately.
+
+The phases are the contract binding to the reviewed plan hashes, the run's
+measurement names and client-to-pool bindings, the terminal inventory, the
+fresh-build check, the private product application under the ordinary limit,
+and the pure acceptance assessment of the product's report.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from ....domain.enterprise.models.configuration import (
@@ -18,6 +25,7 @@ from ....domain.enterprise.models.service_entry import (
     ServiceEntryRefusal,
     ServiceRunStatus,
     ServiceStage,
+    ServiceStageResult,
 )
 from ....domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
@@ -34,7 +42,6 @@ from ....domain.enterprise.models.service_qualification import (
     sp2_mixed_run_parameters,
     sp2_mixed_service_candidates,
 )
-from ....domain.enterprise.models.service_run_record import SourceTreeIdentity
 from ....domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
@@ -50,23 +57,17 @@ from ....domain.enterprise.services.qualification_terminal_evidence import (
     sp2_mixed_server_complete,
     terminal_router_rows_complete,
 )
-from ....domain.enterprise.services.service_compiler import ServiceCompiler
+from ....domain.enterprise.services.service_compiler import service_plan_semantic_hash
 from ....domain.enterprise.services.service_qualification_evidence import Assessment
 from ....domain.enterprise.services.topology_identity import compute_topology_hashes
-from ...use_cases.apply_enterprise_services import (
-    ServiceStageRuntimes,
-    TransportSelection,
-    apply_enterprise_services,
-)
 from ..contracts import Q3ProductContract
 from ..execution import Execution
 from ..fixtures import diagnostic_start
 from ..product_support import (
-    SP1_CAPTURE_DEADLINE_SECONDS,
-    SP1_CAPTURE_SAMPLE_CALLS,
-    ExactInventoryServiceRuntime,
-    RoutedInventoryConfigurationRuntime,
+    apply_private_product,
     capability_digest,
+    capture_terminal_routers,
+    product_stage_runtimes,
 )
 
 SP2_MIXED_TOPOLOGY_SHA256 = (
@@ -175,9 +176,26 @@ def _sp2_mixed_device_evidence() -> tuple[dict[str, Any], ...]:
 def _sp2_mixed_contract_mismatch(
     execution: Execution, contract: Q3ProductContract
 ) -> str:
-    """Name why a composed mixed contract is not this stage's exact run."""
-    definition = execution.definition
-    capacity = definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    """Name why a composed mixed contract is not this stage's exact run.
+
+    The checks run in order and the first cause wins: the reviewed hashes and
+    build, the fixture binding, the private candidates, the canonical intent
+    and the relay, pool and client strategy.
+    """
+    capacity = execution.definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    return (
+        _mixed_identity_mismatch(execution, contract, capacity)
+        or _mixed_fixture_mismatch(execution, contract)
+        or _mixed_candidate_mismatch(execution, contract, capacity)
+        or _mixed_intent_mismatch(execution, contract, capacity)
+        or _mixed_strategy_mismatch(execution, contract)
+    )
+
+
+def _mixed_identity_mismatch(
+    execution: Execution, contract: Q3ProductContract, capacity: bool
+) -> str:
+    """Bind the contract to the reviewed topology, plan and manifest hashes."""
     topology_hash = (
         SP2_CAPACITY_TOPOLOGY_SHA256 if capacity else SP2_MIXED_TOPOLOGY_SHA256
     )
@@ -193,11 +211,6 @@ def _sp2_mixed_contract_mismatch(
         SP2_CAPACITY_NORMALIZED_SERVICES_SHA256
         if capacity
         else SP2_MIXED_NORMALIZED_SERVICES_SHA256
-    )
-    capability_hash = (
-        SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256
-        if capacity
-        else SP2_MIXED_SERVICE_CAPABILITIES_SHA256
     )
     if (
         contract.topology.physical_topology_hash != topology_hash
@@ -217,7 +230,7 @@ def _sp2_mixed_contract_mismatch(
         != configuration_hash
         or contract.configuration_plan.source_topology_hash != topology_hash
         or contract.service_plan.source_configuration_hash != configuration_hash
-        or ServiceCompiler._semantic_hash(contract.service_plan)
+        or service_plan_semantic_hash(contract.service_plan)
         != contract.service_plan.semantic_hash
     ):
         return "sp2_mixed_plan_hash_changed"
@@ -237,6 +250,12 @@ def _sp2_mixed_contract_mismatch(
         or contract.manifest.environment_fingerprint.backend_version != SP2_MIXED_BUILD
     ):
         return "sp2_mixed_build_or_backend_changed"
+    return ""
+
+
+def _mixed_fixture_mismatch(execution: Execution, contract: Q3ProductContract) -> str:
+    """Bind the contract's devices, links and inventory to the stage fixture."""
+    definition = execution.definition
     if {(item.name, item.model) for item in contract.topology.devices} != {
         (item.name, item.model) for item in definition.fixtures
     }:
@@ -264,6 +283,19 @@ def _sp2_mixed_contract_mismatch(
     }:
         return "sp2_mixed_inventory_changed"
 
+    return ""
+
+
+def _mixed_candidate_mismatch(
+    execution: Execution, contract: Q3ProductContract, capacity: bool
+) -> str:
+    """Bind the private service and relay candidates to their pinned records."""
+    definition = execution.definition
+    capability_hash = (
+        SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256
+        if capacity
+        else SP2_MIXED_SERVICE_CAPABILITIES_SHA256
+    )
     # The candidates: exactly the two private service records over one
     # pinned catalog, and relay evidence for exactly the branch routers.
     try:
@@ -304,6 +336,13 @@ def _sp2_mixed_contract_mismatch(
     except (AttributeError, KeyError, TypeError, ValueError):
         return "sp2_mixed_capability_snapshot_unreadable"
 
+    return ""
+
+
+def _mixed_intent_mismatch(
+    execution: Execution, contract: Q3ProductContract, capacity: bool
+) -> str:
+    """Require the intent to be the one canonical form this run derives."""
     # The intent is what the product recomposes from, so it must be the one
     # canonical form this run derives, byte for byte after normalization.
     ids = {item.name: item.id for item in contract.topology.devices}
@@ -332,6 +371,17 @@ def _sp2_mixed_contract_mismatch(
     except (KeyError, TypeError, ValueError):
         return "sp2_mixed_intent_unreadable"
 
+    return ""
+
+
+def _mixed_strategy_mismatch(execution: Execution, contract: Q3ProductContract) -> str:
+    """Require the reviewed relay helpers, pool strategy and client selection."""
+    definition = execution.definition
+    addresses = {
+        item.device_name: item.ipv4
+        for item in contract.configuration_plan.actions
+        if isinstance(item, SetEndpointStaticAddress)
+    }
     relays = {
         (item.device_name, item.interface, item.segment_id)
         for item in contract.configuration_plan.actions
@@ -431,17 +481,27 @@ def _sp2_mixed_client_accepted(entry: Mapping[str, Any]) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class _MixedRun:
+    """The measurement names and pool bindings of one mixed or capacity run."""
+
+    label: str
+    product_id: str
+    final_id: str
+    product_procedure: str
+    final_procedure: str
+    clients: tuple[str, ...]
+    #: Every physical pool the strategy assigns, sorted.
+    pools: tuple[str, ...]
+    #: The explicit index window of each pool's final scan.
+    windows: dict[str, int]
+    #: Each selected client's planned pool action, by client name.
+    client_pools: dict[str, ConfigureServerDhcpPool]
+
+
 def run_sp2_mixed_product(execution: Execution) -> None:
     """Run the mixed DHCP, DNS and HTTP intent through the product, privately."""
     contract = execution.product_contract
-    boundaries = execution.run.boundaries
-    definition = execution.definition
-    capacity = definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
-    label = "CAPACITY" if capacity else "MIXED"
-    product_id = f"M-SP2-{label}-PRODUCT"
-    final_id = f"M-SP2-{label}-FINAL"
-    product_procedure = f"SP2_{label}_PRODUCT"
-    final_procedure = f"SP2_{label}_FINAL"
     if contract is None:
         execution.stop("sp2_mixed_contract_absent")
         return
@@ -449,148 +509,17 @@ def run_sp2_mixed_product(execution: Execution) -> None:
     if mismatch:
         execution.stop(mismatch)
         return
-    clients = definition.selected_clients
-    pools = tuple(sorted(set(SP2_MIXED_PHYSICAL_POOLS.values())))
-    pool_actions = {
-        item.segment_id: item
-        for item in contract.service_plan.actions
-        if isinstance(item, ConfigureServerDhcpPool)
-    }
-    windows = {
-        item.effective_pool_name: item.max_users + 2 for item in pool_actions.values()
-    }
-    client_pools = {
-        name: pool_actions[segment]
-        for name, segment in _sp2_mixed_segments(contract).items()
-        if segment in pool_actions
-    }
-
-    def terminal() -> None:
-        ids = (final_id,)
-        if not execution.begin_terminal(ids, final_procedure):
-            return
-        with execution.procedure(ids):
-            reader = boundaries.native_product_runtimes(
-                execution.bound, contract.inventory
-            ).configuration
-            capture = getattr(reader, "capture_routed_text", None)
-            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:routers"):
-                routers = (
-                    list(
-                        capture(
-                            SP2_MIXED_ROUTERS,
-                            sample_calls=SP1_CAPTURE_SAMPLE_CALLS,
-                            deadline_seconds=SP1_CAPTURE_DEADLINE_SECONDS,
-                        )
-                    )
-                    if callable(capture)
-                    else []
-                )
-            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:clients"):
-                binding_read = execution.probes.read_client_bindings(clients)
-            bindings = (
-                binding_read.payload.get("clients")
-                if binding_read.observed and isinstance(binding_read.payload, dict)
-                else None
-            )
-            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:client-macs"):
-                client_read = execution.probes.read_dhcp_clients(
-                    tuple((name, "FastEthernet0") for name in clients)
-                )
-            readings = (
-                client_readings(client_read.payload, clients)
-                if client_read.observed and isinstance(client_read.payload, Mapping)
-                else {}
-            )
-            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:server"):
-                server_read = execution.probes.read_dhcp_server_baseline(
-                    SP2_MIXED_SERVER, "FastEthernet0"
-                )
-            with execution.ledger.purpose_of(f"sp2:{label.lower()}:final:leases"):
-                lease_read = execution.probes.read_dhcp_lease_calibration(
-                    SP2_MIXED_SERVER,
-                    "FastEthernet0",
-                    tuple((name, windows.get(name, 1)) for name in pools),
-                )
-            scans = (
-                scans_by_pool(lease_read.payload, pools)
-                if lease_read.observed and isinstance(lease_read.payload, Mapping)
-                else unobserved_scans(pools, lease_read.cause)
-            )
-            server = server_read.payload if server_read.observed else None
-            complete = (
-                terminal_router_rows_complete(routers, SP2_MIXED_ROUTERS)
-                and set(client_pools) == set(clients)
-                and sp2_mixed_bindings_usable(bindings, client_pools)
-                and set(readings) == set(clients)
-                and all(
-                    readings[str(row.get("device"))].observed
-                    and readings[str(row.get("device"))].mode is True
-                    and readings[str(row.get("device"))].ipv4 == row.get("ipv4")
-                    for row in bindings
-                )
-                and sp2_mixed_server_complete(server, pools)
-                and set(scans) == set(pools)
-                and all(
-                    sp2_mixed_scan_complete(
-                        scans[name],
-                        [
-                            (
-                                readings[client].ipv4,
-                                normalized_mac(readings[client].mac),
-                            )
-                            for client, pool in client_pools.items()
-                            if pool.effective_pool_name == name
-                        ],
-                    )
-                    for name in pools
-                )
-            )
-            execution.conclude(
-                final_id,
-                Assessment(
-                    MeasurementConclusion.SUPPORTED_IN_SAMPLE
-                    if complete
-                    else MeasurementConclusion.INCONCLUSIVE,
-                    facts={
-                        "routers": routers,
-                        "router_capture_available": callable(capture),
-                        "client_bindings": bindings,
-                        "client_binding_read": binding_read.cause
-                        if not binding_read.observed
-                        else "observed",
-                        "client_readings": {
-                            name: {
-                                key: value
-                                for key, value in item.__dict__.items()
-                                if key != "raw_rows"
-                            }
-                            for name, item in readings.items()
-                        },
-                        "server": dict(server) if isinstance(server, Mapping) else {},
-                        "server_read": server_read.cause
-                        if not server_read.observed
-                        else "observed",
-                        "scans": {
-                            name: item.as_facts() for name, item in scans.items()
-                        },
-                        "complete": complete,
-                    },
-                    causes=[] if complete else ["sp2_mixed_final_inventory_incomplete"],
-                    limitations=[
-                        "terminal_inventory_is_not_product_acceptance",
-                        "positive_row_does_not_establish_table_end",
-                    ],
-                ),
-            )
-        execution.finish(final_procedure)
-
-    execution.register_terminal((final_id,), final_procedure, terminal)
+    run = _sp2_mixed_run(execution, contract)
+    execution.register_terminal(
+        (run.final_id,),
+        run.final_procedure,
+        lambda: _sp2_mixed_final(execution, contract, run),
+    )
     if not diagnostic_start(execution):
         return
-    ids = (product_id,)
-    if not execution.selected(f"SP2-{label.lower()}") or not execution.begin(
-        ids, product_procedure
+    ids = (run.product_id,)
+    if not execution.selected(f"SP2-{run.label.lower()}") or not execution.begin(
+        ids, run.product_procedure
     ):
         return
     accepted = False
@@ -601,179 +530,296 @@ def run_sp2_mixed_product(execution: Execution) -> None:
         ),
         execution.procedure(ids),
     ):
-        with execution.ledger.purpose_of(f"sp2:{label.lower()}:build"):
-            build = boundaries.build_reader(execution.bound.send_and_wait).read()
+        with execution.ledger.purpose_of(f"sp2:{run.label.lower()}:build"):
+            build = execution.run.boundaries.build_reader(
+                execution.bound.send_and_wait
+            ).read()
         observed_build = execution.record.environment.observed_build
         if not build.available or build.version != observed_build:
             execution.conclude(
-                product_id,
+                run.product_id,
                 Assessment(
                     MeasurementConclusion.INCONCLUSIVE,
                     facts={"fresh_build": build.version if build.available else ""},
                     causes=["sp2_mixed_build_unobserved_or_mismatched"],
                 ),
             )
-            execution.finish(product_procedure)
+            execution.finish(run.product_procedure)
             execution.stop("sp2_mixed_build_unobserved_or_mismatched")
             return
-        if not execution.run.transition(f"experiment:{product_procedure}:started"):
+        if not execution.run.transition(f"experiment:{run.product_procedure}:started"):
             execution.stop("persistence:sp2_mixed_product_not_announced")
             return
-
-        class ExactManifest:
-            def latest_by_deployment_id(self, identifier: str):
-                return (
-                    contract.manifest
-                    if identifier == contract.manifest.deployment_id
-                    else None
-                )
-
-        inner = boundaries.native_product_runtimes(execution.bound, contract.inventory)
-        product_runtimes = ServiceStageRuntimes(
-            configuration=RoutedInventoryConfigurationRuntime(
-                inner.configuration, contract.inventory
-            ),
-            services=ExactInventoryServiceRuntime(inner.services, contract.inventory),
-        )
+        product_runtimes = product_stage_runtimes(execution, contract, routed=True)
         with execution.ledger.effect_of(
-            f"sp2:{label.lower()}:apply-enterprise-services"
+            f"sp2:{run.label.lower()}:apply-enterprise-services"
         ):
-            product = apply_enterprise_services(
-                contract.intent_json,
-                deployment_id=contract.manifest.deployment_id,
-                packet_tracer_version=observed_build,
-                import_preflight=boundaries.native_product_import_preflight(),
-                manifest_store=ExactManifest(),
-                runtimes=product_runtimes,
-                record_store=boundaries.native_product_record_store_factory(),
-                environment_fingerprint=contract.manifest.environment_fingerprint,
-                transport_selection=TransportSelection(
-                    channel=execution.channel, fixed_at=boundaries.now()
-                ),
-                endpoint_observer=boundaries.native_product_endpoint_observer(
-                    execution.bound
-                ),
-                capability_catalog=lambda version: (
-                    contract.service_capabilities if version == observed_build else {}
-                ),
-                device_capability_catalog=contract.device_capability_catalog,
-                source_tree=SourceTreeIdentity(
-                    sha=execution.record.source.executed_sha,
-                    tree=execution.record.source.executed_tree,
-                    dirty=execution.record.source.clean is not True,
-                ),
-                run_label=f"{SP2_CANDIDATE_LABEL} {definition.stage.value}",
-                run_id=execution.record.run_id + "-product",
+            product = apply_private_product(
+                execution,
+                contract,
+                product_runtimes,
+                run_label=f"{SP2_CANDIDATE_LABEL} {execution.definition.stage.value}",
+                bind_device_catalog=True,
             )
-        by_id = (
-            {
-                item.expectation_id: item
-                for item in product.service_result.verification_results
-            }
-            if product.service_result is not None
+        assessment = _sp2_mixed_product_assessment(
+            execution, contract, run, product, build.version
+        )
+        accepted = assessment.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        execution.conclude(run.product_id, assessment)
+    execution.finish(run.product_procedure)
+    if not accepted:
+        execution.stop("sp2_mixed_product_not_verified")
+
+
+def _sp2_mixed_run(execution: Execution, contract: Q3ProductContract) -> _MixedRun:
+    """Name this run's measurements and bind each client to its planned pool."""
+    capacity = execution.definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    label = "CAPACITY" if capacity else "MIXED"
+    pool_actions = {
+        item.segment_id: item
+        for item in contract.service_plan.actions
+        if isinstance(item, ConfigureServerDhcpPool)
+    }
+    return _MixedRun(
+        label=label,
+        product_id=f"M-SP2-{label}-PRODUCT",
+        final_id=f"M-SP2-{label}-FINAL",
+        product_procedure=f"SP2_{label}_PRODUCT",
+        final_procedure=f"SP2_{label}_FINAL",
+        clients=execution.definition.selected_clients,
+        pools=tuple(sorted(set(SP2_MIXED_PHYSICAL_POOLS.values()))),
+        windows={
+            item.effective_pool_name: item.max_users + 2
+            for item in pool_actions.values()
+        },
+        client_pools={
+            name: pool_actions[segment]
+            for name, segment in _sp2_mixed_segments(contract).items()
+            if segment in pool_actions
+        },
+    )
+
+
+def _sp2_mixed_final(
+    execution: Execution, contract: Q3ProductContract, run: _MixedRun
+) -> None:
+    """Take the terminal router, binding, client, server and lease inventory."""
+    ids = (run.final_id,)
+    if not execution.begin_terminal(ids, run.final_procedure):
+        return
+    label = run.label.lower()
+    clients = run.clients
+    pools = run.pools
+    client_pools = run.client_pools
+    with execution.procedure(ids):
+        routers, capture_available = capture_terminal_routers(
+            execution, contract, SP2_MIXED_ROUTERS, f"sp2:{label}:final:routers"
+        )
+        with execution.ledger.purpose_of(f"sp2:{label}:final:clients"):
+            binding_read = execution.probes.read_client_bindings(clients)
+        bindings = (
+            binding_read.payload.get("clients")
+            if binding_read.observed and isinstance(binding_read.payload, dict)
+            else None
+        )
+        with execution.ledger.purpose_of(f"sp2:{label}:final:client-macs"):
+            client_read = execution.probes.read_dhcp_clients(
+                tuple((name, "FastEthernet0") for name in clients)
+            )
+        readings = (
+            client_readings(client_read.payload, clients)
+            if client_read.observed and isinstance(client_read.payload, Mapping)
             else {}
         )
-        client_facts = _sp2_mixed_client_facts(contract, by_id)
-        server_ids = [
-            item.id
-            for item in contract.service_plan.verification_expectations
-            if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
-        ]
-        server_states = {
-            identifier: (
-                by_id[identifier].status.value if identifier in by_id else "absent"
+        with execution.ledger.purpose_of(f"sp2:{label}:final:server"):
+            server_read = execution.probes.read_dhcp_server_baseline(
+                SP2_MIXED_SERVER, "FastEthernet0"
             )
-            for identifier in server_ids
-        }
-        routed = [
-            row
-            for row in product.operational_readiness
-            if row.get("kind") == "routed_forwarding"
-        ]
-        prelease = [
-            (row.get("client_segment_id"), row.get("host_segment_id"))
-            for row in routed
-            if row.get("phase") == "dhcp_prelease"
-        ]
-        services = [
-            (row.get("client_segment_id"), row.get("host_segment_id"))
-            for row in routed
-            if row.get("phase") != "dhcp_prelease"
-        ]
-        injected = "device_capability_catalog:injected" in product.limitations
-        accepted = (
-            product.refusal_code is ServiceEntryRefusal.NONE
-            and product.status is ServiceRunStatus.VERIFIED
-            and product.stage is ServiceStage.COMPLETED
-            and product.persisted_stage is ServiceStage.COMPLETED
-            and bool(product.record_path)
-            and not product.persist_error
-            and injected
-            and set(client_facts) == set(clients)
-            and all(_sp2_mixed_client_accepted(item) for item in client_facts.values())
-            and len(server_ids) == len(SP2_MIXED_PHYSICAL_POOLS)
-            and all(value == "verified" for value in server_states.values())
-            and len(prelease) == len(set(prelease))
-            and set(prelease) == SP2_MIXED_ROUTED_PAIRS
-            and len(services) == len(set(services))
-            and set(services) == SP2_MIXED_ROUTED_PAIRS
-            and all(row.get("status") == "admitted" for row in routed)
-            and not any(
-                row.get("kind") == "routed_revocations"
-                for row in product.operational_readiness
+        with execution.ledger.purpose_of(f"sp2:{label}:final:leases"):
+            lease_read = execution.probes.read_dhcp_lease_calibration(
+                SP2_MIXED_SERVER,
+                "FastEthernet0",
+                tuple((name, run.windows.get(name, 1)) for name in pools),
+            )
+        scans = (
+            scans_by_pool(lease_read.payload, pools)
+            if lease_read.observed and isinstance(lease_read.payload, Mapping)
+            else unobserved_scans(pools, lease_read.cause)
+        )
+        server = server_read.payload if server_read.observed else None
+        complete = (
+            terminal_router_rows_complete(routers, SP2_MIXED_ROUTERS)
+            and set(client_pools) == set(clients)
+            and sp2_mixed_bindings_usable(bindings, client_pools)
+            and set(readings) == set(clients)
+            and all(
+                readings[str(row.get("device"))].observed
+                and readings[str(row.get("device"))].mode is True
+                and readings[str(row.get("device"))].ipv4 == row.get("ipv4")
+                for row in bindings
+            )
+            and sp2_mixed_server_complete(server, pools)
+            and set(scans) == set(pools)
+            and all(
+                sp2_mixed_scan_complete(
+                    scans[name],
+                    [
+                        (
+                            readings[client].ipv4,
+                            normalized_mac(readings[client].mac),
+                        )
+                        for client, pool in client_pools.items()
+                        if pool.effective_pool_name == name
+                    ],
+                )
+                for name in pools
             )
         )
         execution.conclude(
-            product_id,
+            run.final_id,
             Assessment(
                 MeasurementConclusion.SUPPORTED_IN_SAMPLE
-                if accepted
+                if complete
                 else MeasurementConclusion.INCONCLUSIVE,
                 facts={
-                    "product_summary": product.compact_summary(),
-                    "product_record_path": product.record_path,
-                    "entry_surface": "private_candidate",
-                    "fresh_build": build.version,
-                    "selected_clients": list(clients),
-                    "clients": client_facts,
-                    "server_states": server_states,
-                    "routed_groups": [
-                        {
-                            "phase": row.get("phase", ""),
-                            "client_segment_id": row.get("client_segment_id"),
-                            "host_segment_id": row.get("host_segment_id"),
-                            "status": row.get("status"),
-                            "device_ids": row.get("device_ids"),
+                    "routers": routers,
+                    "router_capture_available": capture_available,
+                    "client_bindings": bindings,
+                    "client_binding_read": binding_read.cause
+                    if not binding_read.observed
+                    else "observed",
+                    "client_readings": {
+                        name: {
+                            key: value
+                            for key, value in item.__dict__.items()
+                            if key != "raw_rows"
                         }
-                        for row in routed
-                    ],
-                    "readiness_statuses": sorted(
-                        {
-                            str(row.get("status"))
-                            for row in product.operational_readiness
-                        }
-                    ),
-                    "service_candidate_keys": sorted(
-                        sp2_mixed_service_candidates(SP2_MIXED_BUILD, capacity=capacity)
-                    ),
-                    "service_capabilities_sha256": capability_digest(
-                        contract.service_capabilities
-                    ),
-                    "device_candidate_evidence": list(
-                        contract.device_capability_evidence
-                    ),
-                    "product_device_catalog_injected": injected,
+                        for name, item in readings.items()
+                    },
+                    "server": dict(server) if isinstance(server, Mapping) else {},
+                    "server_read": server_read.cause
+                    if not server_read.observed
+                    else "observed",
+                    "scans": {name: item.as_facts() for name, item in scans.items()},
+                    "complete": complete,
                 },
-                causes=[]
-                if accepted
-                else [f"sp2_mixed_product_not_verified:{product.refusal_code.value}"],
+                causes=[] if complete else ["sp2_mixed_final_inventory_incomplete"],
                 limitations=[
-                    "private_candidate_capabilities_not_global_product_promotion",
-                    "relay_packet_giaddr_not_observed",
+                    "terminal_inventory_is_not_product_acceptance",
                     "positive_row_does_not_establish_table_end",
                 ],
             ),
         )
-    execution.finish(product_procedure)
-    if not accepted:
-        execution.stop("sp2_mixed_product_not_verified")
+    execution.finish(run.final_procedure)
+
+
+def _sp2_mixed_product_assessment(
+    execution: Execution,
+    contract: Q3ProductContract,
+    run: _MixedRun,
+    product: ServiceStageResult,
+    fresh_build: str,
+) -> Assessment:
+    """Accept only a verified product whose every client and routed pair verified."""
+    capacity = execution.definition.stage is QualificationStage.SP2_CAPACITY_PRODUCT
+    by_id = (
+        {
+            item.expectation_id: item
+            for item in product.service_result.verification_results
+        }
+        if product.service_result is not None
+        else {}
+    )
+    client_facts = _sp2_mixed_client_facts(contract, by_id)
+    server_ids = [
+        item.id
+        for item in contract.service_plan.verification_expectations
+        if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE
+    ]
+    server_states = {
+        identifier: (
+            by_id[identifier].status.value if identifier in by_id else "absent"
+        )
+        for identifier in server_ids
+    }
+    routed = [
+        row
+        for row in product.operational_readiness
+        if row.get("kind") == "routed_forwarding"
+    ]
+    prelease = [
+        (row.get("client_segment_id"), row.get("host_segment_id"))
+        for row in routed
+        if row.get("phase") == "dhcp_prelease"
+    ]
+    services = [
+        (row.get("client_segment_id"), row.get("host_segment_id"))
+        for row in routed
+        if row.get("phase") != "dhcp_prelease"
+    ]
+    injected = "device_capability_catalog:injected" in product.limitations
+    accepted = (
+        product.refusal_code is ServiceEntryRefusal.NONE
+        and product.status is ServiceRunStatus.VERIFIED
+        and product.stage is ServiceStage.COMPLETED
+        and product.persisted_stage is ServiceStage.COMPLETED
+        and bool(product.record_path)
+        and not product.persist_error
+        and injected
+        and set(client_facts) == set(run.clients)
+        and all(_sp2_mixed_client_accepted(item) for item in client_facts.values())
+        and len(server_ids) == len(SP2_MIXED_PHYSICAL_POOLS)
+        and all(value == "verified" for value in server_states.values())
+        and len(prelease) == len(set(prelease))
+        and set(prelease) == SP2_MIXED_ROUTED_PAIRS
+        and len(services) == len(set(services))
+        and set(services) == SP2_MIXED_ROUTED_PAIRS
+        and all(row.get("status") == "admitted" for row in routed)
+        and not any(
+            row.get("kind") == "routed_revocations"
+            for row in product.operational_readiness
+        )
+    )
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if accepted
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts={
+            "product_summary": product.compact_summary(),
+            "product_record_path": product.record_path,
+            "entry_surface": "private_candidate",
+            "fresh_build": fresh_build,
+            "selected_clients": list(run.clients),
+            "clients": client_facts,
+            "server_states": server_states,
+            "routed_groups": [
+                {
+                    "phase": row.get("phase", ""),
+                    "client_segment_id": row.get("client_segment_id"),
+                    "host_segment_id": row.get("host_segment_id"),
+                    "status": row.get("status"),
+                    "device_ids": row.get("device_ids"),
+                }
+                for row in routed
+            ],
+            "readiness_statuses": sorted(
+                {str(row.get("status")) for row in product.operational_readiness}
+            ),
+            "service_candidate_keys": sorted(
+                sp2_mixed_service_candidates(SP2_MIXED_BUILD, capacity=capacity)
+            ),
+            "service_capabilities_sha256": capability_digest(
+                contract.service_capabilities
+            ),
+            "device_candidate_evidence": list(contract.device_capability_evidence),
+            "product_device_catalog_injected": injected,
+        },
+        causes=[]
+        if accepted
+        else [f"sp2_mixed_product_not_verified:{product.refusal_code.value}"],
+        limitations=[
+            "private_candidate_capabilities_not_global_product_promotion",
+            "relay_packet_giaddr_not_observed",
+            "positive_row_does_not_establish_table_end",
+        ],
+    )

@@ -206,15 +206,15 @@ def test_routed_index_legacy_default_does_not_add_cyclic_trunk_effects():
     from packet_tracer_mcp.adapters.cli.sp2_mixed_qualification import (
         sp2_capacity_product_contract,
     )
-    from packet_tracer_mcp.application.use_cases.apply_enterprise_services import (
-        _path_admission,
+    from packet_tracer_mcp.application.use_cases.service_path_admission import (
+        path_admission,
     )
     from packet_tracer_mcp.domain.enterprise.services.routed_service_path import (
         RoutedPlanIndex,
     )
 
     contract = sp2_capacity_product_contract("9.0.1.0858", "legacy-routed-scope")
-    unsupported, paths = _path_admission(
+    unsupported, paths = path_admission(
         contract.configuration_plan,
         contract.service_plan,
         contract.service_plan.services,

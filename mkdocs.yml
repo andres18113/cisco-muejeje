@@ -86,6 +86,7 @@ nav:
       - Server-PT IOS Fast Loop Brief: engineering/change-briefs/server-pt-ios-fastloop.md
       - Server-PT DHCP Fast Loop Brief: engineering/change-briefs/server-pt-dhcp-fastloop.md
       - Server-PT SP-1 Routed DNS/HTTP Brief: engineering/change-briefs/server-pt-sp1-routed-dns-http.md
+      - Server-Service Qualification Architecture Brief: engineering/change-briefs/server-service-qualification-architecture.md
       - Server-PT Historical Inputs: reference/server-pt/README.md
       - Final-Muejeje Reference (FM-REF 1.0.0): reference/final-muejeje/Final-Muejeje.md
       - Enterprise Planning: architecture/enterprise-planning.md
