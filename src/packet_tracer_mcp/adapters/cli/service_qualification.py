@@ -1279,18 +1279,31 @@ def _native_public_product_entry(governed_root: Path, *, dhcp_authority: bool = 
 
 
 def _native_product_record_path(record: QualificationRecord | None) -> str:
-    """Return the product record a native product measurement names, or "".
+    """Return the one product record the qualification record cites, or "".
 
-    The path is read from the qualification record itself, so the campaign
-    seals exactly the file that record cites.
+    A measurement that assessed a product names its record in the
+    `product_record_path` fact, whatever its stage is called, so the campaign
+    seals exactly the file the record cites. An empty citation names nothing:
+    that product persisted nothing and its own summary says why.
+
+    Raises:
+        ValueError: a citation is not text, or the record cites two different
+            product records; neither can be sealed unambiguously.
     """
     if record is None:
         return ""
+    cited: set[str] = set()
     for item in record.measurements:
-        if item.experiment_id in {"M-NATIVE-PRODUCT", "M-SP1-ROUTED-PRODUCT"}:
-            path = item.facts.get("product_record_path")
-            return path if isinstance(path, str) else ""
-    return ""
+        if "product_record_path" not in item.facts:
+            continue
+        path = item.facts["product_record_path"]
+        if not isinstance(path, str):
+            raise ValueError("product_record_path_malformed")
+        if path:
+            cited.add(path)
+    if len(cited) > 1:
+        raise ValueError("product_record_path_ambiguous")
+    return next(iter(cited), "")
 
 
 def _stop_status(status: dict[str, object], finding: str, exc: Exception) -> None:
@@ -1896,9 +1909,15 @@ def _campaign_main(
             ]
         # Seal both records before the status is written, so a sealing
         # failure is part of that status; the product record is the decisive
-        # E5/E6 evidence. Every persistence failure stops the phase.
+        # E5/E6 evidence. Every persistence failure stops the phase, and so
+        # does a product citation that cannot be sealed unambiguously.
+        try:
+            product_source = _native_product_record_path(record)
+        except ValueError as exc:
+            product_source = ""
+            _stop_status(status, "product_record_unsealed", exc)
         sources = {
-            "product-record": _native_product_record_path(record),
+            "product-record": product_source,
             "qualification-record": result.record_path if result is not None else "",
         }
         for label, source in sources.items():

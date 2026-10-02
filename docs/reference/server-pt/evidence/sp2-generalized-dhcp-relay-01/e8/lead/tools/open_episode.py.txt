@@ -1,0 +1,66 @@
+"""Open one prospectively bounded SP-2 episode; this does not contact PT."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from authority import (
+    prepared_plan,
+    verify_tools,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+verify_tools(EPISODE, Path(__file__))
+ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+prepared_plan(EPISODE, ids)
+baseline = json.loads((EPISODE / "00-preopen-census.json").read_text(encoding="utf-8"))
+if (
+    (
+        baseline.get("episode"),
+        baseline.get("attempt_id"),
+        baseline.get("stage"),
+        baseline.get("head"),
+        baseline.get("tree"),
+    )
+    != (ids["episode"], ids["attempt_id"], ids["stage"], ids["head"], ids["tree"])
+    or baseline.get("process_error") != ""
+    or baseline.get("process_count") != 0
+    or type(baseline.get("process_count")) is not int
+    or baseline.get("mailbox_entries") != []
+    or baseline.get("campaign_lock_present") is not False
+    or baseline.get("status") != ""
+    or baseline.get("isolation_state") != "ISOLATED"
+):
+    raise RuntimeError("preopen_census_not_complete_exact_ready")
+env = dict(os.environ)
+env["PT_MCP_GOVERNED_ROOT"] = str(ROOT)
+args = [
+    sys.executable,
+    "-B",
+    "-m",
+    "packet_tracer_mcp.adapters.cli.server_pt_commissioning",
+    "--open-episode",
+    "--campaign",
+    "sp2",
+    "--charter",
+    ids["charter"],
+    "--episode-plan",
+    str(EPISODE / "episode-plan.json"),
+]
+with (EPISODE / "00-open-episode.stdout").open("x", encoding="utf-8") as stdout:
+    with (EPISODE / "00-open-episode.stderr").open("x", encoding="utf-8") as stderr:
+        result = subprocess.run(
+            args, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, timeout=60
+        )
+with (EPISODE / "00-open-episode.exit").open("x", encoding="utf-8") as out:
+    out.write(str(result.returncode) + "\n")
+raise SystemExit(result.returncode)

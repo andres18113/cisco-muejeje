@@ -2006,3 +2006,251 @@ Every unchanged dispatch/response/record threshold passes, including the
 21-client record below 840,000 bytes. Actual constructed populations remain
 2/21/201/997 for requested targets 2/20/200/1000. Clean exact delivery and all
 six CI jobs still precede fresh native mixed/capacity/public acceptance.
+
+
+### Prospective helper gate closure (pending independent review/publication)
+
+Risk remains L under the existing prospective preparation/seal design at
+`docs/engineering/change-briefs/server-pt-sp2-generalized-dhcp-relay.md:1900`.
+This correction changes only ignored prospective helper bytes. Maintained
+runtime/source, e7 originals/archive and consumed campaign accounting are
+unchanged. The candidate is ready for independent helper review, not SP2 phase
+acceptance and not authorization to skip fresh native preflight.
+
+The five handoff findings have causal offline fixes:
+
+- **Launch opening binding:** every launch requires an exit-zero opening
+  receipt with exact path/hash, verified store index and the indexed opening
+  equal to the prepared campaign/episode/attempt/authorization/source/tree,
+  limits, stage/profile/channel/build, instance, targets and selected clients.
+  Validation precedes lifecycle claim and is repeated before Start-Process.
+  Maker explicitly retains episode/campaign/authorization IDs in the plan.
+- **Required seal evidence:** promised qualification/product paths must exist
+  and match exact indexed path/size/hash pointers. Qualification binds run,
+  authorization/attempt/profile/channel/build/source/tree and owned launch.
+  Exactly one stage-specific PRODUCT and FINAL measurement is required.
+  Product binds summary/run/deployment/source and prepared manifest/topology/
+  configuration/catalog hashes. All checks precede archive-stage creation.
+  A measurement that actually did not run and promised no product may preserve
+  that absence; a ran measurement cannot omit its product record/summary.
+- **Cleanup identity:** closing requires complete typed census with exact
+  episode/attempt/stage and timestamp. Seal binds that census's exact hash and
+  closing identity. Attributed actual exit uses the maintained exit predicate,
+  indexed launch/capture bytes and exact source/PID/path/incarnation. Missing
+  exit remains unattributed; dirty cleanup remains `process_exited_dirty` with
+  `cleanup_clean=false`. It does not alter the clean source identity or promote
+  the failed/inconclusive product to acceptance.
+- **Final inventory:** the reusable publication verifier rejects nonregular,
+  linked/escaping, malformed or duplicate paths and verifies a fresh exact file
+  set and every SHA-256. Seal calls it before and after the move and compares
+  both inventories and manifest digests. Added and mutated final files reject.
+- **Executed helper snapshot:** all ten command entry points require the
+  caller-pinned snapshot digest and exclusive `lead/tools` execution. The
+  exact eleven-file set includes authority/maker/seal and every other executed
+  helper. Preparation and later helpers rehash retained verification summary
+  and all twenty artifacts. Helpers run with checkout-local Python `-B` so
+  unreviewed cached code cannot enter the exclusive tool inventory. The seal
+  preserves every helper/artifact byte; `.py` evidence paths become `.py.txt`
+  with an explicit archive path map. The snapshot is never regenerated or
+  self-accepted by an executing helper.
+
+The first causal run on byte-preserved original helpers had seven failures and
+one positive pass in 4.11 seconds. Missing receipt/pin reached lifecycle claim;
+missing qualification/PRODUCT-FINAL, incomplete census plus truthy unverified
+exit, and both post-move mutation/addition incorrectly sealed. The first fixed
+run retained one positive failure: fixture `read_text()` had normalized CRLF
+in capture_text, unlike the maintained producer's exact decoded bytes. The
+fixture was corrected to `read_bytes().decode()`; the production byte predicate
+was preserved. That run's log/XML remain intact. Eight core cases then passed.
+
+Final bounded offline verification has 114 passes, zero failures/errors/skips,
+in 39.28 seconds. It executes real helper statements with temporary files;
+only external Git/OS/campaign boundaries are substituted. It includes foreign
+opening/authorization/product/closing identities, required evidence and pointer
+hashes, all helper entry points/pins, complete verification retention, actual
+exit and dirty cleanup, pre/post-move corruption, and real mixed/capacity makers
+on temporary empty ledgers. Ruff, format, syntax and all twelve Python CRLF
+checks pass. The exact eleven executed helper hashes were frozen before this
+run and match at termination. No maintained Python changed, so the existing
+ECE source full-suite/CI baseline is retained; no new broad source or native
+result is claimed.
+
+Proof, complete original/updated helper bytes, full diff and exact hashes are
+retained under `data/services/sp2-governed/helper-closure-20260930T2100Z/`.
+The final census proves unchanged clean source `ece5fca`/tree `2c760bd`, empty
+process/mailbox/lock, no e8 IDs/plan and closed ledger: 1,591 operations and
+3,426.06543 seconds spent; 17,409 operations and 17,573.93457 seconds ordinary
+remaining. E7 remains 166 exact files with manifest
+`7336fd2bad09ef51a7c7f7ef503d3e946e950db05bc967d14d517d399fa16ffd`.
+
+**Deferred publication:** insert this disposition into the existing SP2 brief
+with later native archive/public integration publication, preserving the
+executed native source identity. This pending source documentation step is
+explicit; the current execution source remains clean. Independent review must
+approve the exact helper snapshot before prospective preparation. Then retain
+the reviewed snapshot in exclusive lead/tools, supply its externally pinned
+digest and repeat exact-source CI/import/ledger/process/mailbox preflight.
+The old partial e8 snapshot is still unqualified and has not been overwritten.
+
+
+## Episode 8 result and unsealed preservation (risk L)
+
+The helper snapshot above was independently approved (spec and quality PASS)
+and pinned externally at
+`db5128268d77188099cb82f6fad411785122c55e4dfbd9229a306a74ef0e0e8b`. Its
+eleven helpers then ran only from the exclusive `lead/tools` copy with
+checkout-local `python -B`. Episode 8 executed clean commit
+`ece5fca0cf9b997aed185b86367cd00fa6e9cd6c`, tree
+`2c760bd2b9e1727e149efc56eece0833c15f879f`, after exact CI `36764012258`
+passed all six jobs. Stage was `SP2-MIXED-PRODUCT` v1, attempt
+`ccc1b252c0751f2e26a053db26f32493`, run `2026-09-30T21-14-00Z-2e2eba33`,
+owned PID 17032 on 9.0.1.0858/file. The receiver proved the build and an
+empty workspace before effects.
+
+E5 applied 44 actions and omitted seven; 43 checks verified, one partial and
+seven omitted. All fifteen selected foundations verified, and remote pre-lease
+readiness was admitted. E6 applied seven actions and reasserted three; five
+server checks verified. All eleven clients stayed DHCP-on with APIPA/16
+addresses and 0.0.0.0 gateway/resolver. That gave eleven `DHCP_LEASE` failures
+(`native_client_unassigned_in_window`) and 77 blocked dependent checks.
+PRODUCT and FINAL are inconclusive. The server held `serverPool`, `BR1_DATA`
+and `BR2_DATA` enabled. Final scans were empty over 7/5/5 indexes, with the
+end throw at 0 and its confirmation at 1. None of this proves usable leases,
+serving, renewal or universal exhaustion. The stage used 492 operations and
+1,196.422 seconds, including 494.803 seconds of local observation. Restoration
+was proven with no residue or secondary failure. Retirement exited 0, and the
+closing is `verified_clean`. Ledger after e8 is 2,083 operations/4,868.084212
+seconds committed. Ordinary remaining is 16,917 operations/16,131.915788
+seconds, with no open episode.
+
+The governed seal refused before staging: the attempt store holds
+`source-ref-qualification-record.json` but no `source-ref-product-record.json`.
+The executed CLI's `_native_product_record_path` matched only
+`M-NATIVE-PRODUCT` and `M-SP1-ROUTED-PRODUCT`. It returned an empty path for
+`M-SP2-MIXED-PRODUCT`, and the campaign loop skipped an empty source without a
+finding (`archive_findings: []`). The product record exists, and the
+qualification record cites it. The approved helper controls covered the seal's
+own requirements, not this maintained producer. The e7 archive's attempts
+likewise have only qualification source references. Its product bytes were
+archived directly, and it is not rewritten.
+
+Disposition: no pointer is fabricated, and no consumed store, ledger, record
+or lead byte changes. A distinct preservation helper,
+`data/services/sp2-governed/continuation-20261002/tools/preserve_unsealed_e8.py`
+(SHA-256 `1e93467b70b97a74761f9beb9ac9e64686225c7c74a0d40d5cc7215b7a6b83ba`),
+first verified all ten handoff artifact hashes, the absent product source
+reference, the campaign index, the closing identity and the unique product
+citation. It then copied lead, store, record and product bytes into
+`docs/reference/server-pt/evidence/sp2-generalized-dhcp-relay-01/e8/`,
+labelled `NOT_SEALED` in `UNSEALED.json` and `README.md`. Its 260-file
+manifest digest is
+`32fbf85bcbdfff713d9b54f57afc6d0a4a16351c5dab26ec20339a2fba831bac`, verified
+before and after the move. That directory is incomplete failed-run evidence,
+not a campaign seal, and supports no capability.
+
+### Product-record citation correction
+
+Causal design: a measurement that assessed a product names its record in the
+`product_record_path` fact. The campaign seals the one record the
+qualification record cites, whatever the stage is called. A non-text citation
+or two different cited records raise. The campaign phase then stops with
+`product_record_unsealed:ValueError` instead of silently skipping the source.
+An empty citation still names nothing, because that product's own summary
+reports why it persisted nothing. Qualification-record sealing,
+store containment and native/SP1 sealing are unchanged.
+
+RED: a new campaign-route regression runs the real mixed stage through
+`service_qualification.main --campaign sp2` and requires the sealed source's
+path, SHA-256 and size to equal the cited product. It also requires an empty
+finding list and a clean index. It failed exactly as e8 did. Eight
+citation-contract cases also failed: SP2 mixed/capacity, a duplicate identical
+citation, an ambiguous pair and four non-text values. The four controls passed
+(native, SP1, empty and absent). After the owning adapter fix, those cases
+and a forced-ambiguity campaign negative pass, 14 in total. The negative keeps
+the qualification source, stops the phase and seals no product. The affected
+native/SP1/SP2 sealing files pass 76 cases. The corrected selector, read-only
+against the real e7, e8 and native `ad5bca34` records, returns their existing product
+files. Logs, XML and exits are under
+`data/services/sp2-governed/continuation-20261002/source-verification/`.
+
+
+### Episode 8 causal comparison and the acquisition discriminator (risk L)
+
+The retained timelines of e8, the four local native positives (`dc9df810`,
+`fde47f98`, `a18db0b4`, `ad5bca34`) and the two remote positives
+(`499773bf`, `17680441`) were compared read-only. The full comparison is
+retained with its record key paths in
+`data/services/sp2-governed/continuation-20261002/codex-e8-timeline.md`.
+Remote `2eb93db8` completed but was inconclusive (unassigned, no binding);
+it is not a positive.
+
+- Every local positive put its selected clients in DHCP mode before the
+  native enable. Its executed enable guard required each one to be DHCP-on
+  with IP/mask `0.0.0.0`, a pending acquisition. The first attributed row
+  appeared on group sample 2. Remote `17680441` was also mode-first and
+  directly read true/zero before its pool write and enable. Remote
+  `499773bf` enabled first and then activated the client.
+- e8 ran the same order, but its E5 apply/verify/readiness phase lasted
+  21:16:30.079-21:23:44.908 UTC before E6 started. The native enable's
+  retained pre-state shows all five HQ clients DHCP-on with APIPA/16
+  addresses (`state: apipa`). It also shows the exact planned disabled
+  three-pool process. The enable changed false to true. Branch clients were
+  APIPA from their first acquisition sample. No client acquired in any of
+  thirteen samples per group.
+- No run dispatched `AcquireDhcpLease`. e8 contains no client-mode assertion
+  after the enable, so it does not test whether reasserting true restarts
+  acquisition. Exact per-action timestamps were not retained (journal
+  `started_at`/`finished_at` are null), so the APIPA onset time is unknown.
+- Server differences remain. e8 is the only run combining a tuned native
+  pool, two named pools, four process-wide exclusions and three enable calls
+  (one false-to-true, two true-to-true reassertions).
+- The installed vendor reference documents `Pc::setDhcpFlag(bool)`,
+  `HostPort::setDhcpClientFlag(bool)`/`isDhcpClientOn()` and
+  `DhcpClientProcess::dhcpRun(string)` ("start DHCP on the port"), plus
+  `dhcpRelease`, `resetDhcpConfOn` and `getDataOfPort`. It documents no
+  renewal member and no same-value setter or enable-restart semantics. These
+  are DOCUMENTED, not qualified. The ordinary mode helper calls
+  `device.setDhcpFlag(value)` unconditionally; the native guarded path
+  refuses an already-on client.
+
+Ranked hypotheses: (1) an APIPA client is not re-acquired when a server later
+starts, while a pending client is (moderate confidence); (2) the mixed
+native-plus-named startup prevents serving (moderate); (3) a relay-only
+failure (low, because local HQ clients failed identically). MAC attribution is
+excluded, because no lease row exists to mis-join. None is confirmed, so
+product behavior does not change yet. Adding a post-enable acquisition step
+or reordering activation needs a native discriminant first.
+
+The next native question is a distinct private stage, `SP2-MIXED-ACQUISITION`
+v1. `SP2-MIXED-PRODUCT` and `SP2-CAPACITY-PRODUCT` keep their definitions,
+hashes and behavior. The new stage composes exactly the mixed contract and
+runs the same private product, which reproduces or refutes the e8
+precondition. Only if every arm client is then directly read DHCP-on/APIPA,
+with the server enabled on the exact three planned pools, does it apply one
+typed intervention per arm through existing runtimes:
+
+| Arm | Clients | Intervention | Question |
+| --- | --- | --- | --- |
+| A | HQ PC-01, BR2 PC-01 | ordinary DHCP-mode true reassertion on an already-on client | does a same-value assertion restart acquisition? |
+| B | HQ PC-02, BR1 PC-01 | one `AcquireDhcpLease` (`dhcpRun(port)`) under its execute-once claim | does the documented explicit start recover APIPA? |
+| D | HQ PC-03, BR1 PC-02 | ordinary mode false, then true | does a fresh activation after the server is ready acquire? |
+| C | HQ PC-04/05, BR1 PC-03, BR2 PC-02/03 | none | does anything recover passively in the same window? |
+
+One bounded shared window then reads all eleven clients and the three
+physical pools with the existing readers and the stage's finite cadence. Each
+arm reports its first usable reading, exact intended-pool row join, gateway,
+resolver and stability. Outcomes decide the product change: B or D acquiring
+while C stays APIPA supports an explicit post-enable acquisition or activation
+order. A acquiring contradicts the same-value no-op hypothesis. No arm
+acquiring raises the server-startup hypothesis. A control that acquires
+confounds attribution. A product that serves every client means e8 did not
+reproduce; that is reported, not hidden. The intervention measurement is a
+discriminator, never product acceptance, default support or capacity. It
+adds no server restart, pool rewrite, renewal claim or retry of an
+unknown-outcome effect. Unobserved preconditions skip every intervention.
+
+Tests use independent stateful Node stubs that model APIPA fallback, no retry
+on server enable and each arm's alternative behavior. Real composition proves
+precondition refusal, per-arm evidence, the execute-once claim, budget/stop
+behavior, terminal inventory and owned cleanup. Mixed and capacity definition
+hashes and their offline traces stay unchanged.

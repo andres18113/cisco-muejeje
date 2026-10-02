@@ -1,0 +1,110 @@
+{
+  "all_helper_bytes_crlf": true,
+  "allocation_performed": false,
+  "ci_retained_head": "ece5fca0cf9b997aed185b86367cd00fa6e9cd6c",
+  "ci_run_id": 36764012258,
+  "dirty_cleanup_case": "Qualification source.clean=true and product source_tree.dirty=false; exited_dirty/process_exited_dirty, failed/inconclusive product and cleanup_clean=false remain negative evidence",
+  "final_format_exit": "0",
+  "final_ruff_exit": "0",
+  "fixture_correction": "green-v1 positive used normalized read_text capture_text; corrected fixture to exact read_bytes().decode; production byte predicate preserved",
+  "helper_hashes_match_at_termination": true,
+  "helper_sha256": {
+    "authority.py": "74806aa4eb5c5b3aa13573fef18bef48e68ea703f2e13602ea84111baacac37f",
+    "close_episode.py": "0dd9a99ae839756b2faee807851181b4794843473879dcd6f816a353838d0bf6",
+    "exit_census.py": "3dcbf1e8b61e26062a3a7d63b6c8fd1b49869f163a7662427291f348b589b08d",
+    "launch_owned_lab.py": "85d34131dc42411548fbf5498acba449619dd2f9172880be519662f3482497bc",
+    "make_episode.py": "49de79fd245705d71c03d96cf9b9c8d855e9c2f5e1713225f492e6c30d02be66",
+    "open_episode.py": "aa6b70728797d5de32114a38faa65f0b908c8f07e8e3039f23e7b380e945fe4d",
+    "preopen.py": "c6a37db593c0ee59c57e930a94d46860948e0d7bd8db3e7192466fd9faedd17d",
+    "publish_seal.py": "514360293817203f0e5fb82acba77c9856cc9c4684f5c5a6ba3fcca287a11182",
+    "retire_owned_lab.py": "4ef5c8b21444e003d654fc662f5250fab7e89a45f30020cfeb12e5dca5cf2a06",
+    "run_qualification.py": "a4c7294ba335d89dd64f38cece526c9dbe94ea8972df3fb4550d7cd948a7f548",
+    "seal_episode.py": "37e22e47e6e36a4c4e7b3b46429435629d1798e752feac6bbde0c7986d4c2185"
+  },
+  "kind": "OFFLINE_PROSPECTIVE_HELPER_CLOSURE_READY_FOR_INDEPENDENT_REVIEW",
+  "live_performed": false,
+  "observed_at_utc": "2026-09-30T21:00:59.896491+00:00",
+  "original_helper_sha256": {
+    "close_episode.py": "1c2e30c8cbc11dc733b60f0e668ebf3dba2ad1a5dc674af8e473fd1925f218c4",
+    "exit_census.py": "1771dffc8126323c378b59d9152388e75df0b9d4bfcd5148cd7e70e03a25e408",
+    "launch_owned_lab.py": "1e1e570c2f4b2ca872b3468e2593d270a36daa975797983f87451f9226726867",
+    "make_episode.py": "6026b8de4720e42726482c1e17e6576f239ba65cc217c6a9ad94f53c3281179c",
+    "open_episode.py": "f6d4e8622d0e0b4606fc0ceb12d90992b669643c1c37ec29cc14db9ab3f2aee7",
+    "preopen.py": "35d261e19a494307c094e49ff0484f5e4b2d12fe5adb265652959320e87b5746",
+    "publish_seal.py": "e24bdc51a138769d996ef214f0075fcb97852641c918a33f6a1834a8bff4d47a",
+    "retire_owned_lab.py": "8b006f06937900db66589ecbb49056b8c5607bd914e59e42feea15e2dd178c26",
+    "run_qualification.py": "8b98456f2463073d1918fd119c22fabd9849132ff52fa24f142e386889e0e0b4",
+    "seal_episode.py": "d046dc90649a0eba46875021e45f9a559f30d8106ac263562586c73e9d1de6bc"
+  },
+  "results": {
+    "controls-delivery": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "114",
+      "time": "36.004"
+    },
+    "controls-final": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "114",
+      "time": "35.687"
+    },
+    "controls-v3": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "102",
+      "time": "30.817"
+    },
+    "controls-v4": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "114",
+      "time": "28.433"
+    },
+    "green-causal-final": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "8",
+      "time": "3.783"
+    },
+    "green-v1": {
+      "errors": "0",
+      "failures": "1",
+      "skipped": "0",
+      "tests": "8",
+      "time": "4.101"
+    },
+    "green-v2": {
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "8",
+      "time": "3.687"
+    },
+    "red": {
+      "errors": "0",
+      "failures": "7",
+      "skipped": "0",
+      "tests": "8",
+      "time": "3.487"
+    },
+    "red-reproducible-final": {
+      "errors": "0",
+      "failures": "7",
+      "skipped": "0",
+      "tests": "8",
+      "time": "2.956"
+    }
+  },
+  "source_changed": false,
+  "source_head": "ece5fca0cf9b997aed185b86367cd00fa6e9cd6c",
+  "source_tree": "2c760bd2b9e1727e149efc56eece0833c15f879f",
+  "source_verification_artifacts_count": 20,
+  "source_verification_summary_sha256": "396cd46fffe8d671ba2fd32d8170277c7332b00018bb2aa2065b717f9c239548",
+  "tracked_brief_publication": "Deferred explicit insertion of brief-dispositions.md with subsequent native archive/public integration publication; current reviewed design already in brief"
+}

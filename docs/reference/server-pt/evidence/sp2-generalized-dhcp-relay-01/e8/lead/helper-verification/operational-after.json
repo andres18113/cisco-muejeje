@@ -1,0 +1,24 @@
+{
+  "branch": "feature/server-pt-goal-foundations",
+  "campaign_lock_present": false,
+  "e7_exact_file_count": 166,
+  "e7_manifest_sha256": "7336fd2bad09ef51a7c7f7ef503d3e946e950db05bc967d14d517d399fa16ffd",
+  "e8_ids_present": false,
+  "e8_plan_present": false,
+  "head": "ece5fca0cf9b997aed185b86367cd00fa6e9cd6c",
+  "index_findings": [],
+  "ledger": {
+    "committed_operations": 1591,
+    "committed_seconds": 3426.0654299999997,
+    "open_episode": null,
+    "ordinary_operations_left": 17409,
+    "ordinary_seconds_left": 17573.93457
+  },
+  "mailbox_files": [],
+  "observed_at_utc": "2026-09-30T20:48:45.385371+00:00",
+  "process_error": "",
+  "processes": [],
+  "python_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+  "status": "",
+  "tree": "2c760bd2b9e1727e149efc56eece0833c15f879f"
+}

@@ -1,0 +1,19 @@
+{
+  "attempt_id": "ccc1b252c0751f2e26a053db26f32493",
+  "branch": "feature/server-pt-goal-foundations",
+  "campaign_lock_present": false,
+  "episode": 8,
+  "head": "ece5fca0cf9b997aed185b86367cd00fa6e9cd6c",
+  "isolation_state": "ISOLATED",
+  "mailbox_entries": [],
+  "observed_at_utc": "2026-09-30T21:12:07.689945+00:00",
+  "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+  "process_count": 0,
+  "process_error": "",
+  "pytest_loaded": false,
+  "retired_loaded": false,
+  "stage": "SP2-MIXED-PRODUCT",
+  "status": "",
+  "sys_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+  "tree": "2c760bd2b9e1727e149efc56eece0833c15f879f"
+}

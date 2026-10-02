@@ -11,9 +11,12 @@ and budget, never native serving, relay or capacity.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 from campus_product_simulation import CampusPlans, TrunkEnd
@@ -30,6 +33,7 @@ from packet_tracer_mcp.adapters.cli.sp2_mixed_qualification import (
 from packet_tracer_mcp.application.use_cases.qualify_server_services import (
     qualify_server_services,
 )
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
 from packet_tracer_mcp.domain.enterprise.models.capabilities import CapabilityStatus
 from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     SP2_CAPACITY_SITE_CLIENTS,
@@ -43,13 +47,25 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     MeasurementConclusion,
     QualificationRecord,
     QualificationStage,
+    RepositoryIdentity,
     StageBudget,
     stage_definition,
 )
 from packet_tracer_mcp.infrastructure.catalog.service_capabilities import (
     packet_tracer_service_capabilities,
 )
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_qualification_store import (
+    QualificationRecordStore,
+)
 from tests.service_qualification_engine import (
+    SIM_PROCESS_ID,
+    SIM_PROCESS_INCARNATION,
+    SIM_PROCESS_PATH,
+    SIM_SHA,
+    SIM_TREE,
     NodeEngine,
     NodeEngineTransport,
     authorization_args,
@@ -65,6 +81,11 @@ STAGE = "SP2-MIXED-PRODUCT"
 SERVER = "HQ-DEFAULT-DNS-01"
 POOLS = {"HQ": "serverPool", "BR1": "BR1_DATA", "BR2": "BR2_DATA"}
 _NAME = re.compile(r'"((?:HQ|BR1|BR2)-[A-Z0-9-]+)"')
+CAMPAIGN_ATTEMPT = "8" * 32
+SP2_CHARTER = (
+    Path(__file__).resolve().parents[1]
+    / "docs/reference/server-pt/assignments/Prompt_SP2_Generalized_DHCP_Relay.md"
+)
 
 
 def _client_pools(*, capacity: bool = False) -> dict[str, str]:
@@ -252,6 +273,67 @@ class _Run:
         )
 
 
+def _open_campaign_episode(tmp_path, monkeypatch, definition, episode):
+    """Open one SP-2 campaign episode for an owned simulated process.
+
+    Returns the boundary overrides the campaign route needs: the clean
+    repository identity it re-reads and a record store inside the governed
+    root, where the campaign may seal external sources.
+    """
+    source = RepositoryIdentity(
+        branch="feature/server-pt-goal-foundations",
+        head=SIM_SHA,
+        tree=SIM_TREE,
+        clean=True,
+        upstream="cisco/feature/server-pt-goal-foundations",
+        upstream_head="b" * 40,
+    )
+    monkeypatch.setattr(service_qualification, "repository_identity", lambda _: source)
+    monkeypatch.setattr(
+        service_qualification.service_tools,
+        "ImportIsolationPreflight",
+        lambda _root: IsolationPreflight(),
+    )
+    store = ServerPtCommissioningStore(tmp_path, SP2_CAMPAIGN.campaign_id)
+    store.save_ledger_record(
+        f"episode-{episode:04d}-opening",
+        {
+            "kind": "episode_opening",
+            "episode": episode,
+            "question": "Does the mixed product serve every selected client?",
+            "stop_rule": "stop on unknown effect or an unverified client",
+            "source_sha": SIM_SHA,
+            "source_tree": SIM_TREE,
+            "attempt_ids": [CAMPAIGN_ATTEMPT],
+            "tests_run": ["tests/test_sp2_mixed_product_stage.py"],
+            "targets": list(definition.fixture_names),
+            "permitted_effects": [f"qualification:{definition.stage.value}"],
+            "allocated_operations": definition.budget.max_operations,
+            "allocated_seconds": float(definition.budget.max_seconds) + 600.0,
+            "opened_at_utc": (datetime.now(UTC) - timedelta(seconds=5)).isoformat(),
+        },
+    )
+    store.save_process_launch(
+        CAMPAIGN_ATTEMPT,
+        {
+            "pid": SIM_PROCESS_ID,
+            "process_path": SIM_PROCESS_PATH,
+            "process_incarnation": SIM_PROCESS_INCARNATION,
+            "campaign_id": SP2_CAMPAIGN.campaign_id,
+            "execution_purpose": "experimental",
+            "source_sha": SIM_SHA,
+            "source_tree": SIM_TREE,
+        },
+    )
+    store.refresh_index()
+    return {
+        "repository": lambda: source,
+        "record_store": QualificationRecordStore(
+            tmp_path / "data/services/qualification"
+        ),
+    }
+
+
 def _run(
     tmp_path,
     *,
@@ -266,9 +348,16 @@ def _run(
     ambiguous_terminal_routers=False,
     stage=STAGE,
     run_id=RUN_ID,
+    campaign_episode=None,
+    capsys=None,
 ):
     require_node()
     definition = stage_definition(stage)
+    campaign_overrides = (
+        _open_campaign_episode(tmp_path, monkeypatch, definition, campaign_episode)
+        if campaign_episode is not None
+        else {}
+    )
     capacity = stage == "SP2-CAPACITY-PRODUCT"
     constructor = (
         sp2_capacity_product_contract if capacity else sp2_mixed_product_contract
@@ -383,8 +472,30 @@ def _run(
                     else "sp2_mixed_product_contract": contract_factory or constructor
                 }
             ),
+            **campaign_overrides,
             **(boundary_overrides or {}),
         )
+        if campaign_episode is not None:
+            # The operator's route: the qualification CLI under its campaign,
+            # which seals the records the qualification record cites.
+            code = service_qualification.main(
+                request_args(stage)
+                + authorization_args(stage, attempt_id=CAMPAIGN_ATTEMPT)
+                + ["--campaign", "sp2", "--charter", str(SP2_CHARTER)]
+                + ["--episode", str(campaign_episode)],
+                environ={"PT_MCP_GOVERNED_ROOT": str(tmp_path)},
+                boundaries_factory=lambda _root: boundaries,
+            )
+            summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+            [path] = list((tmp_path / "data/services/qualification").rglob("*.json"))
+            result = SimpleNamespace(
+                record=QualificationRecord.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                ),
+                code=code,
+                summary=summary,
+            )
+            return _Run(result, engine.snapshot(), switching, campus)
         request = _request(request_args(stage) + authorization_args(stage))
         try:
             result = qualify_server_services(
@@ -522,6 +633,62 @@ def test_mixed_stage_verifies_every_client_in_its_pool_and_services(tmp_path):
     )
     assert run.record.budget.used_operations <= run.record.budget.max_operations
     assert SP2_MIXED_FINAL_OPERATIONS >= 3 * 2 * 12 + 3
+
+
+def test_the_campaign_seals_the_product_record_the_mixed_record_cites(
+    tmp_path, capsys, monkeypatch
+):
+    """Episode 8 left its product unsealed; the campaign must pin its bytes.
+
+    The qualification record cites the product record in its product
+    measurement. The campaign seals that exact file next to the record, so
+    a later archive never depends on a stage-name list.
+    """
+    run = _run(tmp_path, monkeypatch=monkeypatch, campaign_episode=1, capsys=capsys)
+
+    product = run.measurement("M-SP2-MIXED-PRODUCT")
+    assert product.conclusion is MeasurementConclusion.SUPPORTED_IN_SAMPLE
+    cited = Path(product.facts["product_record_path"])
+    assert cited.is_file()
+    assert run.result.summary["campaign"]["archive_findings"] == []
+    store = ServerPtCommissioningStore(tmp_path, SP2_CAMPAIGN.campaign_id)
+    assert store.external_source_registered(CAMPAIGN_ATTEMPT, "product-record")
+    sealed = json.loads(
+        (
+            tmp_path
+            / "data/commissioning"
+            / SP2_CAMPAIGN.campaign_id
+            / CAMPAIGN_ATTEMPT
+            / "source-ref-product-record.json"
+        ).read_text(encoding="utf-8")
+    )
+    raw = cited.read_bytes()
+    assert sealed["path"] == cited.resolve().relative_to(tmp_path.resolve()).as_posix()
+    assert sealed["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert sealed["bytes"] == len(raw)
+    assert store.external_source_registered(CAMPAIGN_ATTEMPT, "qualification-record")
+    assert store.verify_index() == ()
+
+
+def test_an_unsealable_product_citation_stops_the_campaign_phase(
+    tmp_path, capsys, monkeypatch
+):
+    """A citation the campaign cannot seal is a finding, never a silent skip."""
+
+    def ambiguous(_record):
+        raise ValueError("product_record_path_ambiguous")
+
+    monkeypatch.setattr(service_qualification, "_native_product_record_path", ambiguous)
+    run = _run(tmp_path, monkeypatch=monkeypatch, campaign_episode=1, capsys=capsys)
+
+    campaign = run.result.summary["campaign"]
+    assert "product_record_unsealed:ValueError" in campaign["archive_findings"]
+    assert run.result.code != 0
+    store = ServerPtCommissioningStore(tmp_path, SP2_CAMPAIGN.campaign_id)
+    assert not store.external_source_registered(CAMPAIGN_ATTEMPT, "product-record")
+    assert store.external_source_registered(CAMPAIGN_ATTEMPT, "qualification-record")
+    status = store.load_phase_status(CAMPAIGN_ATTEMPT, "qualification")
+    assert status["outcome"] == "stopped"
 
 
 # -- controlled negatives ---------------------------------------------------------

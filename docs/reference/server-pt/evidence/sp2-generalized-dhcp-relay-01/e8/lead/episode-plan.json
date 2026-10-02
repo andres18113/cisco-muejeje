@@ -1,0 +1,95 @@
+{
+  "allocated_operations": 3210,
+  "allocated_seconds": 4200,
+  "allocation_arithmetic": {
+    "lifecycle_operations": 10,
+    "lifecycle_seconds": 600,
+    "limitation": "joint experimental cutoff; not funding all independent worst-case reader/helper tails",
+    "protected_cleanup_operations": 39,
+    "protected_cleanup_seconds": 420,
+    "stage_minimum_operations": 3002,
+    "stage_operations": 3200,
+    "stage_seconds": 3600
+  },
+  "attempt_ids": [
+    "ccc1b252c0751f2e26a053db26f32493"
+  ],
+  "authorization_id": "SERVER-PT-SP2-E8-ccc1b252c0751f2e26a053db26f32493",
+  "binding_hashes": {
+    "e5": "2e2ef33e9e7d4305b5de2c45b0f71de1c6f8389c90fa2f3df8b62468ee175180",
+    "manifest": "569ad187ae834e982c3d76a94ed469708fc277a923f03a2dedfca97a9d492c2d",
+    "normalized_e6": "6e978c7eecaee52becfddcaf94a3f90ee5eeed7193cd176e91198c181e916d7a",
+    "service_catalog": "d358fda37317120011783b2b78dc8c7ac332d18d4e67e1c1650775a05b255b12",
+    "topology": "2aa800ab75dbdb4a614f30bb3a8cb4afbdf50bbb73c74e47bd636cb024d7134b"
+  },
+  "build": "9.0.1.0858",
+  "campaign_id": "SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01",
+  "channel": "file",
+  "episode": 8,
+  "exact_ci_file": "exact-ci-native-preparation.json",
+  "exact_ci_sha256": "dac88667b2d655c440054699d4c2200ab505c7b522e2f4747d7a0dd723c69196",
+  "helper_snapshot_sha256": "db5128268d77188099cb82f6fad411785122c55e4dfbd9229a306a74ef0e0e8b",
+  "instance_token": "44c9e5ed0e3b35789dd11cf96c1549d5",
+  "ledger_before_preparation": {
+    "committed_operations": 1591,
+    "committed_seconds": 3426.0654299999997,
+    "ordinary_operations_left": 17409,
+    "ordinary_seconds_left": 17573.93457
+  },
+  "native_support_claim": "none; private candidate discriminator",
+  "permitted_effects": [
+    "One owned disposable exact-build file-channel laboratory.",
+    "Only the maintained registered stage fixture and E5/E6 product.",
+    "Current indexed raw lease scans and read-only terminal observations.",
+    "Protected fixture cleanup and maintained exact-owned cohort retirement."
+  ],
+  "prepared_at_utc": "2026-09-30T21:11:59.309218+00:00",
+  "profile_id": "SP2-MIXED-PRODUCT",
+  "profile_version": "1",
+  "question": "Does one Server-PT simultaneously serve five local and three clients at each of two remote sites from the exact three physical pools, then cold IP HTTP, supplied resolver/DNS/hostname HTTP, with complete raw indexed observations?",
+  "selected_clients": [
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "HQ-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-04",
+    "HQ-DEFAULT-PC-05",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-03",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-03"
+  ],
+  "source_sha": "ece5fca0cf9b997aed185b86367cd00fa6e9cd6c",
+  "source_tree": "2c760bd2b9e1727e149efc56eece0833c15f879f",
+  "stage": "SP2-MIXED-PRODUCT",
+  "stop_rule": "Stop on source/process/receiver/fixture/policy mismatch, unknown mutation outcome, unreadable or contradictory evidence, budget or persistence failure. Finalize without mutation replay or channel fallback. No phone effects or native phone UI/call validation.",
+  "targets": [
+    "BR1-EDGE-RTR-01",
+    "BR2-EDGE-RTR-01",
+    "HQ-EDGE-RTR-01",
+    "BR1-DEFAULT-ACCESS-SW-01",
+    "BR2-DEFAULT-ACCESS-SW-01",
+    "HQ-DEFAULT-ACCESS-SW-01",
+    "HQ-DEFAULT-DNS-01",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-03",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "HQ-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-04",
+    "HQ-DEFAULT-PC-05"
+  ],
+  "tests_run": [
+    "8757 passed,6 skipped,3 warnings in1296.11s;8763XMLcases0failures/errors;24sourcehashesmatch",
+    "4passed64.84s; actual2/21/201/997; rawlookup/resource/recordhash artifacts retained; unchangedgatespass",
+    "Clean exact-commit quality gate --base cisco/main --delivery-commit HEAD passed.",
+    "Namespace, docs and whitespace passed; only known documentation links.",
+    "Exact-source six-job CI 36764012258 succeeded."
+  ],
+  "verification_summary_sha256": "396cd46fffe8d671ba2fd32d8170277c7332b00018bb2aa2065b717f9c239548"
+}

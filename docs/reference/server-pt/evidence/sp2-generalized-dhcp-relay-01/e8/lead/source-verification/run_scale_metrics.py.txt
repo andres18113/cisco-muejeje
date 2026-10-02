@@ -1,0 +1,145 @@
+"""Measure unchanged SP2 scale gates with transparent bounded work counters.
+
+Instrumentation returns original values and adds no backend effects. All
+results are offline over the tests' explicitly substituted boundaries.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+from collections import Counter
+from functools import wraps
+from pathlib import Path
+
+import pytest
+
+from packet_tracer_mcp.infrastructure.execution import (
+    enterprise_service_runtime as runtime,
+)
+from packet_tracer_mcp.infrastructure.persistence.service_run_record_store import (
+    ServiceRunRecordStore,
+)
+
+ROOT = Path.cwd().resolve()
+OUTPUT = (
+    ROOT
+    / "data"
+    / "services"
+    / "sp2-governed"
+    / "source-verification"
+    / "scope-correction-v1"
+    / "scale-v3"
+)
+
+
+class ScaleMetrics:
+    """Retain actual indexing/lookup work and exact successful run records."""
+
+    def __init__(self):
+        """Wrap exact readers and persistence without changing their returned values."""
+        self.counts = Counter()
+        self.record = None
+        self.rows = []
+        self.originals = {}
+        for name in (
+            "decode_scan",
+            "_lease_rows_by_address",
+            "_competing_pool_rows",
+            "_same_mac",
+            "_selected_identity_conflict",
+        ):
+            original = getattr(runtime, name)
+            self.originals[name] = original
+
+            def wrapped(*args, _name=name, _original=original, **kwargs):
+                answer = _original(*args, **kwargs)
+                self.counts[_name + "_calls"] += 1
+                if _name == "decode_scan":
+                    self.counts["raw_index_observations_decoded"] += len(
+                        args[0].get("entries") or []
+                    )
+                elif _name == "_lease_rows_by_address":
+                    self.counts["intended_rows_indexed"] += len(args[0])
+                elif _name == "_competing_pool_rows" and answer is not None:
+                    self.counts["counterpool_rows_indexed"] += len(answer)
+                elif _name == "_selected_identity_conflict":
+                    self.counts["identity_census_readings"] += len(args[1])
+                    self.counts["address_census_readings"] += len(args[2])
+                return answer
+
+            setattr(runtime, name, wraps(original)(wrapped))
+        self.original_complete = ServiceRunRecordStore.complete
+
+        def complete(store, record):
+            path = self.original_complete(store, record)
+            self.record = {
+                "path": str(path),
+                "actual_clients": len(record.clients),
+                "run_id": record.run_id,
+            }
+            return path
+
+        ServiceRunRecordStore.complete = complete
+
+    def pytest_runtest_setup(self, item):
+        """Reset bounded counters for the next actual scale case."""
+        self.counts.clear()
+        self.record = None
+
+    def pytest_runtest_teardown(self, item, nextitem):
+        """Copy the observed record after the case measured its resources."""
+        if self.record is None:
+            raise RuntimeError("successful_scale_record_unobserved")
+        path = Path(self.record["path"]).resolve()
+        if not path.is_relative_to(item.funcargs["tmp_path"].resolve()):
+            raise RuntimeError("scale_record_outside_fixture")
+        target = item.callspec.params["target"]
+        copied = OUTPUT / ("target-" + str(target) + "-record.json")
+        if copied.exists():
+            raise RuntimeError("scale_record_would_be_overwritten")
+        shutil.copy2(path, copied)
+        row = {
+            "nominal_target": target,
+            "actual_clients": self.record["actual_clients"],
+            "run_id": self.record["run_id"],
+            "record_file": copied.name,
+            "record_sha256": hashlib.sha256(copied.read_bytes()).hexdigest(),
+            "record_bytes": copied.stat().st_size,
+            "lookup_work": dict(self.counts),
+            "boundary": "offline_only:unchanged_test_sp2_dhcp_scale_substituted_backend",
+        }
+        self.rows.append(row)
+        print("SP2-LOOKUP " + json.dumps(row, sort_keys=True))
+
+    def finish(self):
+        """Restore original callables and retain the complete measurement table."""
+        for name, original in self.originals.items():
+            setattr(runtime, name, original)
+        ServiceRunRecordStore.complete = self.original_complete
+        (OUTPUT / "lookup-metrics.json").write_text(
+            json.dumps(self.rows, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+
+def main():
+    """Run only the unchanged four scale cases and save actual work metrics."""
+    OUTPUT.mkdir(parents=True, exist_ok=False)
+    plugin = ScaleMetrics()
+    try:
+        return pytest.main(
+            [
+                "-q",
+                "-s",
+                "tests/test_sp2_dhcp_scale.py",
+                "--junitxml=" + str(OUTPUT / "scale.xml"),
+            ],
+            plugins=[plugin],
+        )
+    finally:
+        plugin.finish()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

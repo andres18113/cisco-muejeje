@@ -1,0 +1,906 @@
+"""Bounded offline causal controls for prospective SP2 helpers.
+
+The real helper statements run with temporary files. Only OS launch, campaign
+store and Git observations are replaced; no PT, mailbox or ledger is contacted.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    stage_definition,
+)
+
+SOURCE = Path(os.environ["SP2_HELPER_SOURCE"]).resolve()
+HEAD, TREE = "a" * 40, "b" * 40
+
+
+def save(path: Path, value: object) -> None:
+    """Write a fixture record in the actual helper stdout or JSON format."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            value, sort_keys=True, indent=None if path.suffix == ".stdout" else 2
+        )
+        + "\n"
+    )
+
+
+def digest(path: Path) -> str:
+    """Hash independent fixture bytes."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.fixture
+def lab(tmp_path):
+    """Build a complete temporary episode without contacting campaign state."""
+    root = tmp_path
+    lead = root / "data/services/sp2-governed/e8/lead"
+    lead.mkdir(parents=True)
+    tools = lead / "tools"
+    shutil.copytree(SOURCE, tools, ignore=shutil.ignore_patterns("__pycache__"))
+    snapshot = {
+        "schema_version": 1,
+        "tools_sha256": {p.name: digest(p) for p in tools.glob("*.py")},
+    }
+    save(lead / "helper-snapshot.json", snapshot)
+    os.environ["PT_MCP_HELPER_SNAPSHOT_SHA256"] = digest(lead / "helper-snapshot.json")
+    definition = stage_definition("SP2-MIXED-PRODUCT")
+    ids = {
+        "episode": 8,
+        "head": HEAD,
+        "tree": TREE,
+        "attempt_id": "c" * 32,
+        "instance_token": "d" * 32,
+        "authorization_id": "SERVER-PT-SP2-E8-" + "c" * 32,
+        "stage": "SP2-MIXED-PRODUCT",
+        "profile_id": "SP2-MIXED-PRODUCT",
+        "profile_version": "1",
+        "build": "9.0.1.0858",
+        "channel": "file",
+        "charter": str(root / "charter.md"),
+    }
+    (root / "charter.md").write_text("fixture")
+    plan = {
+        "helper_snapshot_sha256": os.environ["PT_MCP_HELPER_SNAPSHOT_SHA256"],
+        "episode": 8,
+        "campaign_id": SP2_CAMPAIGN.campaign_id,
+        "authorization_id": ids["authorization_id"],
+        "source_sha": HEAD,
+        "source_tree": TREE,
+        "attempt_ids": [ids["attempt_id"]],
+        "instance_token": ids["instance_token"],
+        "stage": ids["stage"],
+        "profile_id": ids["profile_id"],
+        "profile_version": "1",
+        "channel": "file",
+        "build": "9.0.1.0858",
+        "targets": list(definition.fixture_names),
+        "selected_clients": list(definition.selected_clients),
+        "allocated_operations": definition.budget.max_operations + 10,
+        "allocated_seconds": definition.budget.max_seconds + 600,
+        "binding_hashes": {
+            k: "e" * 64
+            for k in ("manifest", "topology", "e5", "normalized_e6", "service_catalog")
+        },
+    }
+    save(lead / "ids.json", ids)
+    save(lead / "episode-plan.json", plan)
+    opening = {
+        **plan,
+        "kind": "episode_opening",
+        "charter_sha256": SP2_CAMPAIGN.charter_sha256,
+    }
+    store_path = root / "data/commissioning" / SP2_CAMPAIGN.campaign_id
+    open_path = store_path / "ledger/episode-0008-opening.json"
+    save(open_path, opening)
+    save(
+        lead / "00-open-episode.stdout",
+        {
+            "outcome": "recorded",
+            "record_path": str(open_path),
+            "record_sha256": digest(open_path),
+            "ledger": {"open_episode": 8},
+        },
+    )
+    (lead / "00-open-episode.exit").write_text("0\n")
+    verification_dir = lead / "source-verification"
+    artifact_hashes = {}
+    for i in range(20):
+        p = verification_dir / (
+            "run_scale_metrics.py" if i == 0 else f"artifact-{i:02d}.txt"
+        )
+        p.parent.mkdir(exist_ok=True)
+        p.write_text("observed offline result")
+        artifact_hashes[p.name] = digest(p)
+    verification = {
+        "head": HEAD,
+        "tree": TREE,
+        "delivery_clean_exact": True,
+        "source_python_sha256": {"charter.md": digest(root / "charter.md")},
+        "artifact_sha256": artifact_hashes,
+        "full_result": "full pass",
+        "scale_result": "scale pass",
+    }
+    save(verification_dir / "verification-summary.json", verification)
+    plan["verification_summary_sha256"] = digest(
+        verification_dir / "verification-summary.json"
+    )
+    save(lead / "episode-plan.json", plan)
+    opening.update(plan)
+    save(open_path, opening)
+    save(
+        lead / "00-open-episode.stdout",
+        {
+            "outcome": "recorded",
+            "record_path": str(open_path),
+            "record_sha256": digest(open_path),
+            "ledger": {"open_episode": 8},
+        },
+    )
+    census = {
+        "schema_version": 1,
+        "episode": 8,
+        "attempt_id": ids["attempt_id"],
+        "stage": ids["stage"],
+        "observed_at_utc": "2026-09-30T21:00:00+00:00",
+        "process_error": "",
+        "processes": [],
+        "mailbox_files": [],
+        "campaign_lock_present": False,
+    }
+    save(lead / "11-exit-census.json", census)
+    capture = {
+        "pid": 123,
+        "process_path": str(root / "PacketTracer.exe"),
+        "process_incarnation": "2026-09-30T20:00:00.0000000+00:00",
+        "command_line": "PacketTracer.exe",
+        "created_by_campaign": True,
+        "workspace_kind": "disposable_declared",
+        "launch_method": "Start-Process",
+        "main_window_title": "Cisco Packet Tracer",
+    }
+    (root / "PacketTracer.exe").write_bytes(b"fake exe")
+    save(lead / "05-launch-capture.json", capture)
+    save(
+        lead / "06-record-launch.json",
+        {"exit_code": 0, "capture_file": "05-launch-capture.json"},
+    )
+    launch = {
+        **capture,
+        "capture_text": (lead / "05-launch-capture.json").read_bytes().decode("utf-8"),
+        "capture_sha256": digest(lead / "05-launch-capture.json"),
+        "source_sha": HEAD,
+        "source_tree": TREE,
+        "campaign_id": SP2_CAMPAIGN.campaign_id,
+        "charter_sha256": SP2_CAMPAIGN.charter_sha256,
+        "observed_command_line": capture["command_line"],
+    }
+    exit_record = {
+        **{
+            k: launch[k]
+            for k in (
+                "pid",
+                "process_path",
+                "process_incarnation",
+                "source_sha",
+                "source_tree",
+                "campaign_id",
+                "charter_sha256",
+            )
+        },
+        "actual_exit_observed": True,
+        "disposition": "exited",
+        "process_count": 0,
+        "method": "CloseMainWindow",
+        "requested": True,
+        "mailbox_after_exit": {"error": "", "pending_count": 0},
+    }
+    closing = {
+        "episode": 8,
+        "attempt_id": ids["attempt_id"],
+        "stage": ids["stage"],
+        "source_sha": HEAD,
+        "source_tree": TREE,
+        "kind": "episode_closing",
+        "cleanup_state": "verified_clean",
+        "exit_census_sha256": digest(lead / "11-exit-census.json"),
+    }
+    save(store_path / "ledger/episode-0008-closing.json", closing)
+    (lead / "12-close-episode.exit").write_text("0\n")
+    record_path = root / "data/services/qualification/mixed/run.json"
+    product_path = root / "data/services/product-qualification/run/product.json"
+    product = {
+        "run_id": "run-product",
+        "deployment_id": "qualification/run",
+        "status": "failed",
+        "persisted_stage": "completed",
+        "transport": "file",
+        "packet_tracer_version": ids["build"],
+        "source_tree": {"sha": HEAD, "tree": TREE, "dirty": False},
+        "manifest_hash": "e" * 64,
+        "physical_topology_hash": "e" * 64,
+        "configuration_semantic_hash": "e" * 64,
+    }
+    save(product_path, product)
+    product_summary = {
+        "run_id": "run-product",
+        "deployment_id": "qualification/run",
+        "status": "failed",
+        "persisted_stage": "completed",
+        "stage": "completed",
+        "transport": "file",
+        "packet_tracer_version": ids["build"],
+        "record_path": str(product_path),
+    }
+    authorization = {
+        "authorization_id": ids["authorization_id"],
+        "attempt_id": ids["attempt_id"],
+        "instance_token": ids["instance_token"],
+        "sha": HEAD,
+        "tree": TREE,
+        "stage": ids["stage"],
+        "profile_id": ids["profile_id"],
+        "profile_version": "1",
+        "channel": "file",
+        "build": ids["build"],
+        "targets": plan["targets"],
+        "max_operations": definition.budget.max_operations,
+        "max_seconds": definition.budget.max_seconds,
+        "process_id": capture["pid"],
+        "process_path": capture["process_path"],
+    }
+    record = {
+        "run_id": "run",
+        "stage": ids["stage"],
+        "execution_mode": "live",
+        "authorization": authorization,
+        "source": {"executed_sha": HEAD, "executed_tree": TREE, "clean": True},
+        "transport": {"channel": "file"},
+        "environment": {"observed_build": ids["build"]},
+        "measurements": [
+            {
+                "experiment_id": "M-SP2-MIXED-PRODUCT",
+                "status": "ran",
+                "conclusion": "inconclusive",
+                "facts": {
+                    "product_record_path": str(product_path),
+                    "product_summary": product_summary,
+                    "service_capabilities_sha256": "e" * 64,
+                },
+            },
+            {
+                "experiment_id": "M-SP2-MIXED-FINAL",
+                "status": "ran",
+                "conclusion": "inconclusive",
+                "facts": {},
+            },
+        ],
+    }
+    save(record_path, record)
+    summary = {
+        "run_id": "run",
+        "stage": ids["stage"],
+        "execution_mode": "live",
+        "executed_sha": HEAD,
+        "channel": "file",
+        "observed_build": ids["build"],
+        "record_path": str(record_path),
+        "campaign": {
+            "campaign_id": SP2_CAMPAIGN.campaign_id,
+            "episode": 8,
+            "attempt_id": ids["attempt_id"],
+        },
+    }
+    save(lead / "09-qualification.stdout", summary)
+    for label, p in (
+        ("qualification-record", record_path),
+        ("product-record", product_path),
+    ):
+        save(
+            store_path / ids["attempt_id"] / f"source-ref-{label}.json",
+            {
+                "path": p.relative_to(root).as_posix(),
+                "sha256": digest(p),
+                "bytes": p.stat().st_size,
+            },
+        )
+
+    class Store:
+        def __init__(self, *args):
+            pass
+
+        def verify_index(self):
+            return ()
+
+        def ledger_records(self):
+            return {"episode-0008-opening": opening, "episode-0008-closing": closing}
+
+        def load_process_exit(self, attempt):
+            return exit_record
+
+        def load_process_launch(self, attempt):
+            return launch
+
+    return SimpleNamespace(**locals())
+
+
+def execute(lab, name, *, move_change=None, argv=None):
+    """Run real helper statements, replacing only external observation/effects."""
+    program = ast.parse((lab.tools / name).read_text())
+    for node in program.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id in {"ROOT", "EXE"} for t in node.targets
+        ):
+            node.value = ast.Constant(
+                str(
+                    lab.root
+                    if node.targets[0].id == "ROOT"
+                    else lab.root / "PacketTracer.exe"
+                )
+            )
+            node.value = ast.Call(
+                func=ast.Name(id="Path", ctx=ast.Load()), args=[node.value], keywords=[]
+            )
+    ast.fix_missing_locations(program)
+    claims = []
+
+    class Coordinator:
+        def claim_lifecycle(self, **kwargs):
+            claims.append(kwargs)
+            raise RuntimeError("offline_effect_boundary_reached")
+
+    class Control:
+        def packet_tracer_processes(self):
+            return SimpleNamespace(error="", processes=[])
+
+    def run(args, **kwargs):
+        if args[0] == "git":
+            values = {
+                "HEAD": HEAD,
+                "HEAD^{tree}": TREE,
+                "--porcelain=v1": "",
+                "--show-current": "feature/server-pt-goal-foundations",
+            }
+            return SimpleNamespace(stdout=values.get(args[-1], ""))
+        raise AssertionError("external process attempted")
+
+    replace = os.replace
+
+    def moved(a, b):
+        replace(a, b)
+        if move_change == "bytes":
+            (Path(b) / "README.md").write_text("changed after move")
+        if move_change == "extra":
+            (Path(b) / "extra.txt").write_text("unexpected")
+
+    sys.modules.pop("authority", None)
+    sys.modules.pop("publish_seal", None)
+    sys.path.insert(0, str(lab.tools))
+    try:
+        with (
+            patch.object(sys, "dont_write_bytecode", True),
+            patch.object(
+                sys, "argv", argv or [str(lab.tools / name), str(lab.lead), "8"]
+            ),
+            patch("subprocess.run", run),
+            patch("os.replace", moved),
+            patch(
+                "packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store.ServerPtCommissioningStore",
+                lab.Store,
+            ),
+            patch(
+                "packet_tracer_mcp.infrastructure.persistence.campaign_coordination.FileCampaignCoordinator",
+                Coordinator,
+            ),
+            patch(
+                "packet_tracer_mcp.infrastructure.execution.server_pt_process_control.PowerShellOwnedProcessControl",
+                Control,
+            ),
+            patch(
+                "packet_tracer_mcp.infrastructure.execution.file_bridge.bridge_dir",
+                lambda: lab.root / "mailbox",
+            ),
+            patch(
+                "packet_tracer_mcp.infrastructure.execution.import_isolation_preflight.ImportIsolationPreflight.ensure_isolated",
+                lambda _: SimpleNamespace(
+                    isolated=True, state=SimpleNamespace(value="ISOLATED")
+                ),
+            ),
+        ):
+            try:
+                exec(
+                    compile(program, str(lab.tools / name), "exec"),
+                    {"__name__": "__main__", "__file__": str(lab.tools / name)},
+                )
+                return None, claims
+            except (RuntimeError, OSError, ValueError, SystemExit) as exc:
+                return exc, claims
+    finally:
+        sys.path.pop(0)
+
+
+def test_launch_missing_open_receipt_refuses_before_claim(lab):
+    """Missing receipt must reject before lifecycle ownership is claimed."""
+    (lab.lead / "00-open-episode.stdout").unlink()
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+
+
+def test_seal_promised_missing_record_refuses_before_stage(lab):
+    """A promised missing qualification cannot produce a seal."""
+    lab.record_path.unlink()
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None
+    assert not list((lab.root / "data/services/sp2-governed").glob("archive-stage-*"))
+
+
+def test_seal_missing_product_measurement_refuses_before_stage(lab):
+    """Missing required product/final measurements cannot produce a seal."""
+    lab.record["measurements"] = []
+    save(lab.record_path, lab.record)
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None
+    assert not list((lab.root / "data/services/sp2-governed").glob("archive-stage-*"))
+
+
+def test_seal_incomplete_census_and_unverified_exit_refuses(lab):
+    """Incomplete census and truthy unverified exit cannot claim clean."""
+    save(lab.lead / "11-exit-census.json", {"campaign_lock_present": False})
+    lab.exit_record.clear()
+    lab.exit_record["unverified"] = True
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None
+
+
+@pytest.mark.parametrize("change", ["bytes", "extra"])
+def test_seal_post_move_changes_refuse(lab, change):
+    """Fresh post-move verification must detect every changed or added file."""
+    exc, _ = execute(lab, "seal_episode.py", move_change=change)
+    assert exc is not None
+
+
+def test_launch_unpinned_snapshot_refuses_before_claim(lab):
+    """No caller pin means no lifecycle ownership or launch."""
+    os.environ.pop("PT_MCP_HELPER_SNAPSHOT_SHA256", None)
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+
+
+def test_complete_failed_product_can_seal_without_success_claim(lab):
+    """Complete failure evidence seals without promoting product acceptance."""
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is None, repr(exc)
+    sealed = next((lab.root / "data/services/sp2-governed/sealed").iterdir())
+    assert (sealed / "record/run.json").is_file()
+    assert (sealed / "product/product.json").is_file()
+
+
+def update_pointer(lab, label, path):
+    """Give an identity-negative fixture a valid independent byte pointer."""
+    save(
+        lab.store_path / lab.ids["attempt_id"] / f"source-ref-{label}.json",
+        {
+            "path": path.relative_to(lab.root).as_posix(),
+            "sha256": digest(path),
+            "bytes": path.stat().st_size,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("source_sha", "f" * 40),
+        ("source_tree", "f" * 40),
+        ("episode", 9),
+        ("campaign_id", "FOREIGN"),
+        ("attempt_ids", ["f" * 32]),
+        ("authorization_id", "FOREIGN"),
+        ("profile_id", "FOREIGN"),
+        ("profile_version", "2"),
+        ("instance_token", "f" * 32),
+        ("targets", ["FOREIGN"]),
+        ("allocated_operations", 9999),
+        ("allocated_seconds", 9999),
+        ("stage", "SP2-CAPACITY-PRODUCT"),
+        ("channel", "http"),
+        ("build", "9.9"),
+    ],
+)
+def test_launch_foreign_indexed_opening_refuses_before_claim(lab, field, value):
+    """A green receipt/index cannot substitute a foreign opening identity."""
+    lab.opening[field] = value
+    save(lab.open_path, lab.opening)
+    receipt = json.loads((lab.lead / "00-open-episode.stdout").read_text())
+    receipt["record_sha256"] = digest(lab.open_path)
+    save(lab.lead / "00-open-episode.stdout", receipt)
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+    assert "opening_differs" in str(exc)
+
+
+@pytest.mark.parametrize("change", ["exit", "path", "hash", "index"])
+def test_launch_bad_open_receipt_refuses_before_claim(lab, change):
+    """Only the actual exit-zero receipt for the exact indexed path authorizes."""
+    if change == "exit":
+        (lab.lead / "00-open-episode.exit").write_text("2\n")
+    else:
+        receipt = json.loads((lab.lead / "00-open-episode.stdout").read_text())
+        if change == "path":
+            receipt["record_path"] = str(lab.root / "foreign.json")
+        if change == "hash":
+            receipt["record_sha256"] = "0" * 64
+        if change == "index":
+            lab.Store.verify_index = lambda _: ("changed",)
+        save(lab.lead / "00-open-episode.stdout", receipt)
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+
+
+def test_launch_complete_opening_reaches_only_offline_claim_boundary(lab):
+    """The complete good opening must pass, proving negative controls discriminate."""
+    lab.Store.ledger_records = lambda _: {"episode-0008-opening": lab.opening}
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert str(exc) == "offline_effect_boundary_reached"
+    assert claims == [{"attempt_id": lab.ids["attempt_id"]}]
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        "authority.py",
+        "make_episode.py",
+        "seal_episode.py",
+        "open_episode.py",
+        "preopen.py",
+        "launch_owned_lab.py",
+        "run_qualification.py",
+        "retire_owned_lab.py",
+        "exit_census.py",
+        "close_episode.py",
+        "publish_seal.py",
+    ],
+)
+def test_any_reviewed_helper_drift_refuses_before_effect(lab, helper):
+    """Every tool, including maker/authority/seal, belongs to the caller-pinned set."""
+    with (lab.tools / helper).open("a") as stream:
+        stream.write("\n# byte drift\n")
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+    assert "helper_bytes_changed" in str(exc)
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["extra", "missing", "pin", "manifest", "artifact", "artifact_missing", "summary"],
+)
+def test_snapshot_and_all_verification_bytes_are_required(lab, change):
+    """Ignored file changes remain observable even when Git is clean."""
+    if change == "extra":
+        (lab.tools / "extra.py").write_text("pass")
+    if change == "missing":
+        (lab.tools / "make_episode.py").unlink()
+    if change == "pin":
+        os.environ["PT_MCP_HELPER_SNAPSHOT_SHA256"] = "0" * 64
+    if change == "manifest":
+        (lab.lead / "helper-snapshot.json").write_text("{}")
+    if change == "artifact":
+        (lab.verification_dir / "run_scale_metrics.py").write_text("different")
+    if change == "artifact_missing":
+        (lab.verification_dir / "artifact-19.txt").unlink()
+    if change == "summary":
+        (lab.verification_dir / "verification-summary.json").write_text("{}")
+    exc, claims = execute(lab, "launch_owned_lab.py")
+    assert exc is not None and not claims
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("attempt_id", "f" * 32),
+        ("authorization_id", "FOREIGN"),
+        ("profile_id", "FOREIGN"),
+        ("profile_version", "2"),
+        ("sha", "f" * 40),
+        ("tree", "f" * 40),
+        ("stage", "SP2-CAPACITY-PRODUCT"),
+        ("channel", "http"),
+        ("build", "9.9"),
+        ("instance_token", "f" * 32),
+        ("targets", ["FOREIGN"]),
+        ("process_id", 321),
+        ("process_path", "FOREIGN"),
+    ],
+)
+def test_seal_foreign_qualification_authorization_refuses_before_stage(
+    lab, field, value
+):
+    """A present indexed record cannot substitute another authorization or process."""
+    lab.record["authorization"][field] = value
+    save(lab.record_path, lab.record)
+    update_pointer(lab, "qualification-record", lab.record_path)
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None
+    assert "qualification" in str(exc)
+    assert not list((lab.root / "data/services/sp2-governed").glob("archive-stage-*"))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("run_id", "FOREIGN-product"),
+        ("deployment_id", "qualification/FOREIGN"),
+        ("transport", "http"),
+        ("packet_tracer_version", "9.9"),
+        ("manifest_hash", "0" * 64),
+        ("physical_topology_hash", "0" * 64),
+        ("configuration_semantic_hash", "0" * 64),
+    ],
+)
+def test_seal_foreign_product_identity_or_hash_refuses_before_stage(lab, field, value):
+    """Present product bytes must match the run, deployment and prepared hashes."""
+    lab.product[field] = value
+    save(lab.product_path, lab.product)
+    update_pointer(lab, "product-record", lab.product_path)
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None and "product_record" in str(exc)
+    assert not list((lab.root / "data/services/sp2-governed").glob("archive-stage-*"))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing_product",
+        "product_pointer",
+        "product_summary",
+        "record_pointer",
+        "run",
+        "profile",
+        "channel",
+        "build",
+        "source",
+        "duplicate_product",
+        "missing_final",
+    ],
+)
+def test_seal_missing_or_foreign_evidence_refuses_before_stage(lab, change):
+    """Every promised file and exact measurement/summary identity is checked first."""
+    if change == "missing_product":
+        lab.product_path.unlink()
+    if change == "product_pointer":
+        ref = lab.store_path / lab.ids["attempt_id"] / "source-ref-product-record.json"
+        save(ref, {"path": "FOREIGN", "sha256": "0" * 64, "bytes": 1})
+    if change == "record_pointer":
+        ref = (
+            lab.store_path
+            / lab.ids["attempt_id"]
+            / "source-ref-qualification-record.json"
+        )
+        save(ref, {"path": "FOREIGN", "sha256": "0" * 64, "bytes": 1})
+    if change == "product_summary":
+        lab.record["measurements"][0]["facts"]["product_summary"]["run_id"] = "FOREIGN"
+    if change == "run":
+        lab.record["run_id"] = "FOREIGN"
+    if change == "profile":
+        lab.record["authorization"]["profile_id"] = "FOREIGN"
+    if change == "channel":
+        lab.record["transport"]["channel"] = "http"
+    if change == "build":
+        lab.record["environment"]["observed_build"] = "9.9"
+    if change == "source":
+        lab.record["source"]["executed_tree"] = "f" * 40
+    if change == "duplicate_product":
+        lab.record["measurements"].append(lab.record["measurements"][0])
+    if change == "missing_final":
+        lab.record["measurements"].pop()
+    if change not in {"missing_product", "product_pointer", "record_pointer"}:
+        save(lab.record_path, lab.record)
+        update_pointer(lab, "qualification-record", lab.record_path)
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None
+    assert not list((lab.root / "data/services/sp2-governed").glob("archive-stage-*"))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("episode", 9),
+        ("attempt_id", "f" * 32),
+        ("stage", "FOREIGN"),
+        ("processes", None),
+        ("process_error", False),
+        ("mailbox_files", None),
+        ("campaign_lock_present", 0),
+        ("observed_at_utc", "unobservable"),
+    ],
+)
+def test_complete_typed_census_identity_required(lab, field, value):
+    """Falsy or foreign census values cannot establish absence."""
+    lab.census[field] = value
+    save(lab.lead / "11-exit-census.json", lab.census)
+    lab.closing["exit_census_sha256"] = digest(lab.lead / "11-exit-census.json")
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None and "census" in str(exc)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("pid", 321),
+        ("process_path", "FOREIGN"),
+        ("process_incarnation", "FOREIGN"),
+        ("source_sha", "f" * 40),
+        ("source_tree", "f" * 40),
+        ("campaign_id", "FOREIGN"),
+        ("actual_exit_observed", False),
+        ("disposition", "unverified"),
+        ("process_count", False),
+        ("requested", False),
+    ],
+)
+def test_owned_exit_identity_and_actual_observation_required(lab, field, value):
+    """A truthy indexed exit must prove this exact actual owned process exit."""
+    lab.exit_record[field] = value
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None and "exit_evidence" in str(exc)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("episode", 9),
+        ("attempt_id", "f" * 32),
+        ("stage", "FOREIGN"),
+        ("exit_census_sha256", "0" * 64),
+        ("cleanup_state", "unverified"),
+    ],
+)
+def test_closing_exact_identity_census_and_cleanup_required(lab, field, value):
+    """Closeout cannot substitute another census, identity or clean label."""
+    lab.closing[field] = value
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is not None and ("closing" in str(exc) or "closed" in str(exc))
+
+
+def test_verified_dirty_exit_remains_dirty_in_seal(lab, capsys):
+    """Observed process exit does not promote a dirty workspace to clean."""
+    lab.exit_record["disposition"] = "exited_dirty"
+    lab.closing["cleanup_state"] = "process_exited_dirty"
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is None, repr(exc)
+    sealed = next((lab.root / "data/services/sp2-governed/sealed").iterdir())
+    assert "process_exited_dirty" in (sealed / "README.md").read_text()
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result["cleanup_clean"] is False
+    assert result["assessment"] == "inconclusive"
+
+
+def test_every_verification_artifact_and_exact_helper_byte_is_retained(lab):
+    """A successful seal retains the complete proof snapshot, not only a summary."""
+    exc, _ = execute(lab, "seal_episode.py")
+    assert exc is None, repr(exc)
+    sealed = next((lab.root / "data/services/sp2-governed/sealed").iterdir())
+    for name, expected in lab.artifact_hashes.items():
+        archived_name = name + ".txt" if name.endswith(".py") else name
+        assert digest(sealed / "lead/source-verification" / archived_name) == expected
+    for tool in lab.tools.glob("*.py"):
+        assert digest(sealed / "lead/tools" / (tool.name + ".txt")) == digest(tool)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "make_episode.py",
+        "preopen.py",
+        "open_episode.py",
+        "launch_owned_lab.py",
+        "run_qualification.py",
+        "retire_owned_lab.py",
+        "exit_census.py",
+        "close_episode.py",
+        "seal_episode.py",
+        "publish_seal.py",
+    ],
+)
+def test_every_entry_point_requires_the_caller_pin(lab, name):
+    """No helper entry point may bypass the reviewed snapshot gate."""
+    os.environ.pop("PT_MCP_HELPER_SNAPSHOT_SHA256", None)
+    argv = [str(lab.tools / name), str(lab.lead), "8"]
+    if name == "make_episode.py":
+        argv = [
+            str(lab.tools / name),
+            str(lab.lead),
+            str(lab.lead / "exact-ci.json"),
+            lab.ids["stage"],
+            str(lab.verification_dir / "verification-summary.json"),
+        ]
+    if name == "publish_seal.py":
+        argv = [str(lab.tools / name), str(lab.lead)]
+    exc, claims = execute(lab, name, argv=argv)
+    assert exc is not None and "snapshot_not_pinned" in str(exc)
+    assert not claims
+    assert not (lab.lead / "08-qualification-argv.json").exists()
+    assert not (lab.lead / "episode-closing.json").exists()
+
+
+@pytest.mark.parametrize("stage", ["SP2-MIXED-PRODUCT", "SP2-CAPACITY-PRODUCT"])
+def test_maker_retains_explicit_authorization_and_all_proof_inputs(lab, stage):
+    """The real maker derives both stages within a temporary empty ledger."""
+    (lab.lead / "ids.json").unlink()
+    (lab.lead / "episode-plan.json").unlink()
+    repo = Path.cwd()
+    mandate = (
+        lab.root
+        / "docs/reference/server-pt/assignments/Prompt_SP2_Generalized_DHCP_Relay.md"
+    )
+    mandate.parent.mkdir(parents=True)
+    mandate.write_bytes(
+        (
+            repo
+            / "docs/reference/server-pt/assignments/Prompt_SP2_Generalized_DHCP_Relay.md"
+        ).read_bytes()
+    )
+    ci_path = lab.lead / "exact-ci.json"
+    jobs = [
+        {"name": name, "status": "completed", "conclusion": "success"}
+        for name in [
+            "quality",
+            "docs",
+            "pytest (windows-latest, 3.11)",
+            "pytest (windows-latest, 3.13)",
+            "pytest (ubuntu-latest, 3.11)",
+            "pytest (ubuntu-latest, 3.13)",
+        ]
+    ]
+    save(
+        ci_path,
+        {
+            "headSha": HEAD,
+            "databaseId": 1,
+            "status": "completed",
+            "conclusion": "success",
+            "jobs": jobs,
+        },
+    )
+    lab.Store.ledger_records = lambda _: {}
+    argv = [
+        str(lab.tools / "make_episode.py"),
+        str(lab.lead),
+        str(ci_path),
+        stage,
+        str(lab.verification_dir / "verification-summary.json"),
+    ]
+    exc, claims = execute(lab, "make_episode.py", argv=argv)
+    assert exc is None, repr(exc)
+    assert not claims
+    ids = json.loads((lab.lead / "ids.json").read_text())
+    plan = json.loads((lab.lead / "episode-plan.json").read_text())
+    assert ids["episode"] == 1
+    assert plan["episode"] == 1
+    assert plan["authorization_id"] == ids["authorization_id"]
+    assert plan["helper_snapshot_sha256"] == os.environ["PT_MCP_HELPER_SNAPSHOT_SHA256"]
+    assert plan["stage"] == stage
+    assert len(plan["selected_clients"]) == (
+        54 if stage == "SP2-CAPACITY-PRODUCT" else 11
+    )
+    assert (
+        len(
+            json.loads(
+                (lab.verification_dir / "verification-summary.json").read_text()
+            )["artifact_sha256"]
+        )
+        == 20
+    )
