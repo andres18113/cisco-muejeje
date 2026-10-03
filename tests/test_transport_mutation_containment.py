@@ -247,6 +247,14 @@ CONTAINED_MUTATION_FAMILIES = {
 #: entrar en la tabla de familias. Nada en este archivo lo detecta solo, y por
 #: eso la lista es corta y cada entrada dice por qué.
 PAYLOAD_BUILDERS_AND_PROSE = {
+    "application/server_service_qualification/workflows/sp2_mixed_product.py": (
+        "names dhcpRun only as private acquisition capability prose; every "
+        "effect goes through classified runtimes via the product applicators"
+    ),
+    "domain/enterprise/services/sp2_acquisition_discriminator.py": (
+        "names dhcpRun only in an evidence limitation; pure observation "
+        "decisions reach no transport or native mutation API"
+    ),
     "shared/ios_config.py": "returns the configureIosDevice call as text",
     "infrastructure/generator/ptbuilder_generator.py": "generates a PTBuilder script",
     "domain/enterprise/mutation_replay.py": (

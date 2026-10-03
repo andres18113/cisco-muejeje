@@ -2411,3 +2411,19 @@ is the e9 lead's `helper-snapshot.json`, and the approval record is
 `helper-review-approved-e9.json`. Helpers run only from `e9/lead/tools` with
 `python -B` and that externally pinned digest. The review package is
 retained under `data/services/sp2-governed/e9/helper-review/`.
+
+
+### Episode 9 containment classification correction (2026-10-03, risk S)
+
+Starting source is `c860f12ab24bf6275c4103f2632a3206185d7695` on
+`feature/server-pt-goal-foundations` in the goal-foundations checkout. The
+mutation-containment sweep mistakes descriptive `dhcpRun` strings in the mixed
+workflow and pure acquisition discriminator for dispatch. Add both modules to
+`PAYLOAD_BUILDERS_AND_PROSE`, with the existing explicit rationale precedent.
+Acceptance requires the focused classification test and entire containment
+file to pass, followed by the complete clean exact-commit gate set and six-job
+exact-SHA CI before e9. Production behavior, containment families, the approved
+three-arm design, and pinned e9 helper bytes remain unchanged. New unit,
+integration, and LIVE tests are not applicable to this test-only correction;
+the existing structural tests verify its contract. Episode 9 remains risk L
+and follows its separately approved helper and evidence controls.
