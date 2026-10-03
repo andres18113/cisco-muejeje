@@ -25,6 +25,7 @@ its vendor findings, its seams and the plan projections the stage reuses.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, StrEnum
@@ -40,7 +41,9 @@ from ..models.service_plan import (
     AcquireDhcpLease,
     ConfigureServerDhcpPool,
     EnableServerDhcp,
+    ServicePhase,
     ServicePlan,
+    ServiceType,
     ServiceVerificationKind,
 )
 from ..models.service_qualification import (
@@ -52,6 +55,7 @@ from ..models.service_qualification import (
 )
 from ..models.verification import PrerequisiteKind
 from .configuration_compiler import configuration_plan_semantic_hash
+from .service_compiler import service_plan_semantic_hash
 
 D_DHCP = "D-DHCP"
 D_WEB = "D-WEB"
@@ -837,6 +841,210 @@ def q3_fastloop_service_plan(
         ),
         tuple(rewrites),
     )
+
+
+# -- SP-2 acquisition discriminator --------------------------------------------
+
+#: The identities the SP-2 acquisition projections carry beside the source's.
+SP2_ACQUISITION_REASSERT_PROJECTION = "sp2-acquisition-reassert"
+SP2_ACQUISITION_START_PROJECTION = "sp2-acquisition-start"
+
+
+def sp2_acquisition_reassert_plan(
+    plan: ConfigurationPlan, *, device_names: Sequence[str]
+) -> ConfigurationPlan:
+    """Project E5 to one ordinary DHCP-mode assertion on each named client.
+
+    The arm's clients are already in DHCP mode, which is exactly the state the
+    native guarded mode path refuses. This projection therefore clears the
+    four native binding fields, so the ordinary setter runs, and keeps every
+    other field and the compiled mode read-back. Dependencies on effects the
+    product already applied are dropped, as in the Q3-FL projection.
+    """
+    wanted = set(device_names)
+    actions = [
+        item.model_copy(
+            update={
+                "depends_on": [],
+                "apply_dependencies": [],
+                "native_server_device_name": "",
+                "native_server_interface": "",
+                "native_effective_pool_name": "",
+                "native_inactive_clients": [],
+            }
+        )
+        for item in plan.actions
+        if isinstance(item, SetEndpointDhcp) and item.device_name in wanted
+    ]
+    if {item.device_name for item in actions} != wanted or len(actions) != len(wanted):
+        raise ValueError("every reassertion client needs exactly one DHCP-mode action")
+    action_ids = {item.id for item in actions}
+    device_ids = {item.device_id for item in actions}
+    projected = ConfigurationPlan(
+        id=f"{plan.id}/{SP2_ACQUISITION_REASSERT_PROJECTION}",
+        source_topology_id=plan.source_topology_id,
+        source_topology_hash=plan.source_topology_hash,
+        source_topology_hash_schema=plan.source_topology_hash_schema,
+        actions=actions,
+        devices=[
+            item.model_copy(
+                update={
+                    "action_ids": [
+                        value for value in item.action_ids if value in action_ids
+                    ]
+                },
+                deep=True,
+            )
+            for item in plan.devices
+            if item.device_id in device_ids
+        ],
+        verification_expectations=[
+            item.model_copy(deep=True)
+            for item in plan.verification_expectations
+            if item.action_id in action_ids
+        ],
+    )
+    projected.semantic_hash = configuration_plan_semantic_hash(projected)
+    return projected
+
+
+def _acquisition_id(kind: str, *parts: str) -> str:
+    semantic = "|".join((kind, *parts))
+    return f"svc/{kind}/{hashlib.sha256(semantic.encode('utf-8')).hexdigest()[:16]}"
+
+
+def sp2_acquisition_start_plan(
+    plan: ServicePlan,
+    configuration_plan: ConfigurationPlan,
+    *,
+    device_names: Sequence[str],
+    nonce: str,
+) -> ServicePlan:
+    """Project E6 to the applied DHCP server setup plus one explicit start each.
+
+    The mixed intent is state-only, so its plan holds no acquisition. Each
+    named client gets one typed `AcquireDhcpLease` for its own segment's pool,
+    derived as the compiler derives one: the pool's service, segment and
+    network, a claim reference for that service and client, a dependency on
+    the pool and on the service's compiled server-state read-back, and this
+    run's nonce. Every DHCP pool and enable action is kept so the caller
+    passes the product's rows as retained results; none is dispatched twice.
+    Only the server-state read-backs the acquisitions wait on are kept, so
+    each is read fresh before its start; the caller reads leases itself. A client without exactly one DHCP-mode action, or a segment
+    without exactly one pool, raises ValueError before anything is built.
+    """
+    if not nonce:
+        raise ValueError("an explicit start needs this run's nonce")
+    wanted = set(device_names)
+    modes = [
+        item
+        for item in configuration_plan.actions
+        if isinstance(item, SetEndpointDhcp) and item.device_name in wanted
+    ]
+    if {item.device_name for item in modes} != wanted or len(modes) != len(wanted):
+        raise ValueError(
+            "every explicit-start client needs exactly one DHCP-mode action"
+        )
+    models = {item.device_id: item.model for item in configuration_plan.devices}
+    pools: dict[str, ConfigureServerDhcpPool] = {}
+    for item in plan.actions:
+        if isinstance(item, ConfigureServerDhcpPool):
+            if item.segment_id in pools:
+                raise ValueError("a DHCP segment has more than one pool")
+            pools[item.segment_id] = item
+    server_state = {}
+    for item in plan.verification_expectations:
+        if item.kind is ServiceVerificationKind.DHCP_SERVER_STATE:
+            if item.service_id in server_state:
+                raise ValueError("a DHCP service has more than one server state")
+            server_state[item.service_id] = item.id
+    server_actions = [
+        item
+        for item in plan.actions
+        if isinstance(item, ConfigureServerDhcpPool | EnableServerDhcp)
+    ]
+    acquisitions = []
+    for mode in sorted(modes, key=lambda item: item.device_name):
+        pool = pools.get(mode.segment_id)
+        if pool is None or pool.service_id not in server_state:
+            raise ValueError("an explicit-start client segment has no compiled pool")
+        acquisitions.append(
+            AcquireDhcpLease(
+                id=_acquisition_id("sp2-acquire-dhcp", pool.service_id, mode.device_id),
+                phase=ServicePhase.ACQUISITION,
+                service_id=pool.service_id,
+                service_type=ServiceType.DHCP,
+                host_device_id=mode.device_id,
+                host_device_name=mode.device_name,
+                host_model=models.get(mode.device_id, ""),
+                site_id=mode.site_id,
+                depends_on=[pool.id],
+                verification_dependencies=[server_state[pool.service_id]],
+                required_capability="client_dhcp_acquisition",
+                interface=mode.interface,
+                segment_id=mode.segment_id,
+                server_device_id=pool.host_device_id,
+                server_device_name=pool.host_device_name,
+                pool_name=pool.effective_pool_name or pool.pool_name,
+                network=pool.network,
+                prefix=pool.prefix,
+                netmask=pool.netmask,
+                claim_ref=_acquisition_id(
+                    "sp2-dhcp-claim", pool.service_id, mode.device_id
+                ),
+                nonce=nonce,
+            )
+        )
+    actions = [*server_actions, *acquisitions]
+    action_ids = {item.id for item in actions}
+    hosts = {item.host_device_id for item in actions}
+    waited = {
+        value for item in acquisitions for value in item.verification_dependencies
+    }
+    expectations = [
+        item.model_copy(deep=True)
+        for item in plan.verification_expectations
+        if item.id in waited
+    ]
+    expectation_ids = {item.id for item in expectations}
+    acquired_by_service: dict[str, list[str]] = {}
+    for item in acquisitions:
+        acquired_by_service.setdefault(item.service_id, []).append(item.id)
+    services = [
+        item.model_copy(
+            update={
+                "action_ids": [
+                    *(value for value in item.action_ids if value in action_ids),
+                    *acquired_by_service.get(item.id, []),
+                ],
+                "verification_expectation_ids": [
+                    value
+                    for value in item.verification_expectation_ids
+                    if value in expectation_ids
+                ],
+            },
+            deep=True,
+        )
+        for item in plan.services
+        if item.id in {row.service_id for row in actions}
+    ]
+    foundations = [
+        item.model_copy(deep=True)
+        for item in plan.foundational_requirements
+        if item.device_id in hosts
+    ]
+    projected = plan.model_copy(
+        update={
+            "id": f"{plan.id}/{SP2_ACQUISITION_START_PROJECTION}",
+            "services": services,
+            "actions": actions,
+            "foundational_requirements": foundations,
+            "verification_expectations": expectations,
+        },
+        deep=True,
+    )
+    projected.semantic_hash = service_plan_semantic_hash(projected)
+    return projected
 
 
 def q3_fastloop_fixture_placements(

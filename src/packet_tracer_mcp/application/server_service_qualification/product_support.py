@@ -26,8 +26,10 @@ from ...domain.enterprise.models.configuration_runtime import (
     ConfigurationRuntimeContext,
     RuntimeActionMutation,
     RuntimeConfigurationTarget,
+    decide_mutation,
 )
 from ...domain.enterprise.models.deployment import DeploymentManifest
+from ...domain.enterprise.models.execution import DispatchFact, ResultFact
 from ...domain.enterprise.models.service_entry import ServiceStageResult
 from ...domain.enterprise.models.service_plan import (
     ConfigureServerDhcpPool,
@@ -36,7 +38,10 @@ from ...domain.enterprise.models.service_plan import (
     ServiceVerificationKind,
 )
 from ...domain.enterprise.models.service_run_record import SourceTreeIdentity
-from ...domain.enterprise.models.service_runtime import RuntimeServiceVerification
+from ...domain.enterprise.models.service_runtime import (
+    RuntimeServiceVerification,
+    ServiceApplicationResult,
+)
 from ...domain.enterprise.services.configuration_compiler import (
     configuration_plan_semantic_hash,
 )
@@ -50,7 +55,7 @@ from ..use_cases.apply_enterprise_services import (
 from ..use_cases.apply_services import ServiceRuntime
 from ..use_cases.foundational_evidence import derive_service_foundational_statuses
 from ..use_cases.service_access_readiness_gate import ReadinessNotRequired
-from .contracts import Q3ProductContract
+from .contracts import Q3ProductContract, bounded
 from .execution import Execution
 
 #: Why the qualification stages run no product readiness gate. They take their
@@ -321,6 +326,55 @@ def product_stage_runtimes(
         configuration=configuration(inner.configuration, contract.inventory),
         services=ExactInventoryServiceRuntime(inner.services, contract.inventory),
     )
+
+
+def acquisition_request_outcome(
+    result: ServiceApplicationResult, action_id: str
+) -> str:
+    """Classify one acquisition's dispatch from its own canonical row.
+
+    This is the Q3-FL decision predicate the brief records, shared with the
+    SP-2 acquisition discriminator. The product keeps a void `dhcpRun`
+    unsettled for product dependents until a read-back verifies it, and
+    nothing here changes that. What a diagnostic needs is narrower: whether
+    the claim script's single evaluation is known. A row
+    that reproduces its canonical decision, was accepted and correlated,
+    reported `attempted=true` and carried no call error is a known dispatch.
+    `attempted=false` is a known non-dispatch with its skip reason. A
+    preflight refusal dispatched nothing. Anything else is an unknown outcome,
+    which stops every later effect and is never retried.
+    """
+    row = next(
+        (item for item in result.action_results if item.action_id == action_id), None
+    )
+    if row is None:
+        if result.preflight_errors and not result.action_results:
+            return "not_dispatched:preflight:" + bounded(result.preflight_errors[0])
+        return "outcome_unknown:acquisition_row_absent"
+    snapshot = row.received_mutation
+    if snapshot is None or snapshot.action_id != action_id:
+        return "outcome_unknown:acquisition_snapshot_absent"
+    decision = decide_mutation(snapshot)
+    if not (
+        row.status is decision.status
+        and row.failure_code is decision.failure_code
+        and row.disposition is decision.disposition
+        and row.dispatch is snapshot.dispatch
+        and row.result is snapshot.result
+        and row.attempted is snapshot.attempted
+        and row.cause == decision.cause
+    ):
+        return "outcome_unknown:acquisition_row_incoherent"
+    if snapshot.attempted is False and not snapshot.call_error:
+        return "not_dispatched:" + bounded(row.cause or snapshot.cause or "skipped")
+    if (
+        row.dispatch is not DispatchFact.ACCEPTED
+        or row.result is not ResultFact.CORRELATED
+        or snapshot.attempted is not True
+        or bool(snapshot.call_error)
+    ):
+        return "outcome_unknown:acquisition_dispatch"
+    return "dispatched"
 
 
 def source_tree_identity(execution: Execution) -> SourceTreeIdentity:

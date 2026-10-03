@@ -68,6 +68,9 @@ _DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_CAPACITY_PRODUCT] = (
     *_DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_MIXED_PRODUCT][1:],
     "sp2_capacity_product_contract",
 )
+_DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_MIXED_ACQUISITION] = (
+    _DIAGNOSTIC_BOUNDARIES[QualificationStage.SP2_MIXED_PRODUCT]
+)
 _DIAGNOSTIC_BOUNDARIES[QualificationStage.Q3_NATIVE_PRODUCT] = (
     "native_product_contract",
     "native_product_runtimes",

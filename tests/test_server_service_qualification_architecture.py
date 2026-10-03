@@ -213,6 +213,15 @@ STARTING_HANDLERS = {
         "run_sp2_mixed_product",
     ),
 }
+#: Stages added after the refactor, each a named delta to the former table
+#: rather than a silent widening of it: SP-2's acquisition discriminator
+#: (2026-10-02) is the mixed workflow's second driver.
+SUCCESSOR_HANDLERS = {
+    QualificationStage.SP2_MIXED_ACQUISITION: (
+        "workflows.sp2_mixed_product",
+        "run_sp2_mixed_acquisition",
+    ),
+}
 
 
 def _module_path(module: str) -> Path:
@@ -440,6 +449,8 @@ def test_every_executable_stage_has_exactly_the_former_handler():
 
     Declarative stages are refused by request admission before any record,
     so they have no handler; the former chain's `else` could not reach them.
+    A stage added later is listed as a named successor, never folded into
+    the former table.
     """
     coordinator = importlib.import_module(f"{PACKAGE}.coordinator")
     handlers = coordinator.STAGE_HANDLERS
@@ -450,8 +461,10 @@ def test_every_executable_stage_has_exactly_the_former_handler():
         and definition.executable
     }
 
-    assert set(handlers) == executable == set(STARTING_HANDLERS)
-    for stage, (module, name) in STARTING_HANDLERS.items():
+    assert not set(SUCCESSOR_HANDLERS) & set(STARTING_HANDLERS)
+    expected = {**STARTING_HANDLERS, **SUCCESSOR_HANDLERS}
+    assert set(handlers) == executable == set(expected)
+    for stage, (module, name) in expected.items():
         owner = importlib.import_module(f"{PACKAGE}.{module}")
         assert handlers[stage] is getattr(owner, name), stage
 

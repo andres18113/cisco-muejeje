@@ -9,7 +9,6 @@ from typing import Any
 from ....domain.enterprise.models.configuration_runtime import (
     ActionExecutionStatus,
     ConfigurationRuntimeContext,
-    decide_mutation,
 )
 from ....domain.enterprise.models.execution import DispatchFact, ResultFact
 from ....domain.enterprise.models.service_plan import (
@@ -89,7 +88,7 @@ from ....domain.enterprise.services.sp2_pool_diagnostic import (
 from ...use_cases.apply_configuration import ConfigurationApplicator
 from ...use_cases.apply_services import ServiceApplicator
 from ...use_cases.service_access_readiness_gate import ServiceAccessReadinessGate
-from ..contracts import Q3ProductContract, bounded
+from ..contracts import Q3ProductContract
 from ..dhcp_observations import (
     Q3_FL_DEFAULT_PURPOSE,
     DhcpAcquisitionClient,
@@ -108,6 +107,7 @@ from ..fixtures import diagnostic_start
 from ..operation_budget import counted_seq
 from ..product_support import (
     DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
+    acquisition_request_outcome,
     application_rows,
     exact_inventory_runtimes,
     product_runtime_context,
@@ -175,52 +175,6 @@ def _q3fl_sequence_facts(state: _Q3FlState) -> dict[str, Any]:
             for item in sequence.intervals
         ],
     }
-
-
-def _q3fl_request(result: ServiceApplicationResult, action_id: str) -> str:
-    """Classify one acquisition's dispatch from its own canonical row.
-
-    This is the Q3-FL decision predicate the brief records. The product keeps
-    a void `dhcpRun` unsettled for product dependents until a read-back
-    verifies it, and nothing here changes that. What this profile needs is
-    narrower: whether the claim script's single evaluation is known. A row
-    that reproduces its canonical decision, was accepted and correlated,
-    reported `attempted=true` and carried no call error is a known dispatch.
-    `attempted=false` is a known non-dispatch with its skip reason. A
-    preflight refusal dispatched nothing. Anything else is an unknown outcome,
-    which stops every later effect and is never retried.
-    """
-    row = next(
-        (item for item in result.action_results if item.action_id == action_id), None
-    )
-    if row is None:
-        if result.preflight_errors and not result.action_results:
-            return "not_dispatched:preflight:" + bounded(result.preflight_errors[0])
-        return "outcome_unknown:acquisition_row_absent"
-    snapshot = row.received_mutation
-    if snapshot is None or snapshot.action_id != action_id:
-        return "outcome_unknown:acquisition_snapshot_absent"
-    decision = decide_mutation(snapshot)
-    if not (
-        row.status is decision.status
-        and row.failure_code is decision.failure_code
-        and row.disposition is decision.disposition
-        and row.dispatch is snapshot.dispatch
-        and row.result is snapshot.result
-        and row.attempted is snapshot.attempted
-        and row.cause == decision.cause
-    ):
-        return "outcome_unknown:acquisition_row_incoherent"
-    if snapshot.attempted is False and not snapshot.call_error:
-        return "not_dispatched:" + bounded(row.cause or snapshot.cause or "skipped")
-    if (
-        row.dispatch is not DispatchFact.ACCEPTED
-        or row.result is not ResultFact.CORRELATED
-        or snapshot.attempted is not True
-        or bool(snapshot.call_error)
-    ):
-        return "outcome_unknown:acquisition_dispatch"
-    return "dispatched"
 
 
 def run_q3_fastloop(execution: Execution) -> None:
@@ -936,7 +890,7 @@ def _q3fl_dhcp(
                 operational_readiness=DIAGNOSTIC_TAKES_ITS_OWN_FORWARDING_EVIDENCE,
                 retained_action_results=retained,
             )
-        request = _q3fl_request(result, client.acquisition_id)
+        request = acquisition_request_outcome(result, client.acquisition_id)
         entry: dict[str, Any] = {
             "request": request,
             "plan_id": plan.id,

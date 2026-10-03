@@ -74,7 +74,10 @@ from .workflows.native_pool import (
 from .workflows.native_product import run_q3_native_product
 from .workflows.original_dhcp import run_q3
 from .workflows.sp1_routed_product import run_sp1_routed_product
-from .workflows.sp2_mixed_product import run_sp2_mixed_product
+from .workflows.sp2_mixed_product import (
+    run_sp2_mixed_acquisition,
+    run_sp2_mixed_product,
+)
 from .workflows.sp2_remote_relay import run_sp2_remote_relay
 from .workflows.web_diagnostics import run_d_web
 
@@ -352,7 +355,9 @@ def _product_contract(
     if stage in (
         QualificationStage.SP2_MIXED_PRODUCT,
         QualificationStage.SP2_CAPACITY_PRODUCT,
+        QualificationStage.SP2_MIXED_ACQUISITION,
     ):
+        # The acquisition discriminator composes exactly the mixed contract.
         mixed = (
             boundaries.sp2_capacity_product_contract
             if stage is QualificationStage.SP2_CAPACITY_PRODUCT
@@ -770,6 +775,7 @@ STAGE_HANDLERS: Mapping[QualificationStage, Callable[[Execution], object]] = (
             QualificationStage.SP2_REMOTE_RELAY: run_sp2_remote_relay,
             QualificationStage.SP2_MIXED_PRODUCT: run_sp2_mixed_product,
             QualificationStage.SP2_CAPACITY_PRODUCT: run_sp2_mixed_product,
+            QualificationStage.SP2_MIXED_ACQUISITION: run_sp2_mixed_acquisition,
         }
     )
 )

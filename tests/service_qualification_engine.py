@@ -65,6 +65,11 @@ Behaviour switches (`config`) select the engine facts under test:
 - `dhcp_mode_acquire_after_evals`: with `dhcp_mode_acquires`, the background
   acquisition completes only after this many later script evaluations, the
   slow relayed acquisition SP-2 e4 left unobserved in its two fixed samples;
+- `dhcp_mode_reassert_acquires`: with `dhcp_mode_acquires`, whether putting a
+  port that is already in DHCP mode into DHCP mode again starts another
+  acquisition. False models the hypothesis that only an off-to-on transition
+  acquires; which one Packet Tracer does is exactly what SP-2's acquisition
+  discriminator measures, so neither value is evidence;
 - `server_gateway_dropped`: a Server-PT static `configurePcIp` keeps its
   address and loses its gateway, so a relayed reply has no return hop;
 - `dhcp_failure_address`: the address a failed acquisition leaves on the
@@ -150,6 +155,7 @@ const config = Object.assign({
   default_pool_drift_reads: 0, default_pool_realigns_on_address: false,
   dhcp_mode_acquires: false, dhcp_failure_address: '',
   dhcp_mode_acquire_after_evals: 0, server_gateway_dropped: false,
+  dhcp_mode_reassert_acquires: true,
   dhcp_retry_on_server_enable: false,
   pc2_mode_on_server_enable: false,
   dhcp_native_start_behavior: 'change',
@@ -1019,6 +1025,7 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
     dhcpSetterCalls.configurePcIpDhcp++;
     dhcpTimeline.push({effect: 'clientMode', device: String(name)});
   }
+  const wasDhcp = !!port.dhcpMode;
   port.dhcpMode = !!dhcp;
   if (ip && mask) {
     port.ip = String(ip); port.mask = String(mask);
@@ -1039,7 +1046,8 @@ global.configurePcIp = (name, dhcp, ip, mask, gateway, dns, iface) => {
       pool.end = intToIp(ipToInt(network) + Number(pool.max) - 1);
     }
   }
-  if (dhcp && dev && config.dhcp_mode_acquires) {
+  if (dhcp && dev && config.dhcp_mode_acquires
+      && (config.dhcp_mode_reassert_acquires || !wasDhcp)) {
     backgroundAcquisitions.push({device: dev.name, port: port.name});
     if (Number(config.dhcp_mode_acquire_after_evals) > 0) {
       pendingAcquisitions.push({dev, port, remaining: Number(config.dhcp_mode_acquire_after_evals)});

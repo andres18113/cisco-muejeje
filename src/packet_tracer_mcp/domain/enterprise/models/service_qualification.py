@@ -105,6 +105,9 @@ class QualificationStage(StrEnum):
     #: two relayed named pools, then routed DNS and HTTP for every client.
     SP2_MIXED_PRODUCT = "SP2-MIXED-PRODUCT"
     SP2_CAPACITY_PRODUCT = "SP2-CAPACITY-PRODUCT"
+    #: The mixed product again, then one typed acquisition intervention per
+    #: arm client on the state it leaves: a discriminator, never acceptance.
+    SP2_MIXED_ACQUISITION = "SP2-MIXED-ACQUISITION"
 
 
 class ExecutionMode(StrEnum):
@@ -463,6 +466,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.SP2_REMOTE_RELAY: (3200, 3600),
     QualificationStage.SP2_MIXED_PRODUCT: (3200, 3600),
     QualificationStage.SP2_CAPACITY_PRODUCT: (6000, 10800),
+    QualificationStage.SP2_MIXED_ACQUISITION: (3400, 4200),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1633,6 +1637,7 @@ SP2_STAGES = (
     QualificationStage.SP2_REMOTE_RELAY,
     QualificationStage.SP2_MIXED_PRODUCT,
     QualificationStage.SP2_CAPACITY_PRODUCT,
+    QualificationStage.SP2_MIXED_ACQUISITION,
 )
 
 
@@ -2752,6 +2757,32 @@ SP2_MIXED_FINAL_OPERATIONS = 90
 SP2_CAPACITY_PRODUCT_OPERATIONS = 5500
 SP2_CAPACITY_FINAL_OPERATIONS = 90
 
+#: The acquisition discriminator's arms over the unchanged mixed clients.
+#: `reassert` puts an already-on client in DHCP mode again through the
+#: ordinary mode setter; `explicit_start` dispatches one typed
+#: `AcquireDhcpLease`; `control` is left untouched. Every pool has an
+#: explicit start and a control, HQ and BR1 also a reassertion.
+SP2_ACQUISITION_ARMS: dict[str, str] = {
+    "HQ-DEFAULT-PC-01": "reassert",
+    "HQ-DEFAULT-PC-02": "explicit_start",
+    "HQ-DEFAULT-PC-03": "explicit_start",
+    "HQ-DEFAULT-PC-04": "control",
+    "HQ-DEFAULT-PC-05": "control",
+    "BR1-DEFAULT-PC-01": "explicit_start",
+    "BR1-DEFAULT-PC-02": "reassert",
+    "BR1-DEFAULT-PC-03": "control",
+    "BR2-DEFAULT-PC-01": "explicit_start",
+    "BR2-DEFAULT-PC-02": "control",
+    "BR2-DEFAULT-PC-03": "control",
+}
+#: Samples and waits of the one shared post-intervention window, the stock
+#: acquisition cadence of the product's groups.
+SP2_ACQUISITION_SAMPLES = 13
+SP2_ACQUISITION_WAIT_SECONDS = 10.0
+#: The precondition reads (clients, server, pools), each arm's typed effect
+#: and verification, and three reads per window sample, with headroom.
+SP2_ACQUISITION_ARMS_OPERATIONS = 200
+
 _SP2_MIXED_FIXTURES = (
     FixtureDevice("BR1-EDGE-RTR-01", "2911"),
     FixtureDevice("BR2-EDGE-RTR-01", "1941"),
@@ -3445,6 +3476,101 @@ def _sp2_mixed_product(*, capacity: bool = False) -> StageDefinition:
     )
 
 
+def _sp2_mixed_acquisition() -> StageDefinition:
+    """Reproduce the mixed product's end state, then intervene per arm client.
+
+    The fixture, intent and product are exactly the mixed stage's. Only when
+    every arm client is read in DHCP mode on a link-local address, with the
+    server enabled on its planned pools, does one typed intervention per arm
+    run; one shared window then reads every client and pool.
+    """
+    stage = QualificationStage.SP2_MIXED_ACQUISITION
+    ceiling_operations, ceiling_seconds = STAGE_CEILINGS[stage]
+    fixtures = _SP2_MIXED_FIXTURES
+    links = _SP2_MIXED_LINKS
+    return StageDefinition(
+        stage=stage,
+        executable=True,
+        purpose=(
+            "Run the mixed product, then discriminate how a DHCP-mode client "
+            "left on a link-local address acquires once the server is enabled."
+        ),
+        fixtures=fixtures,
+        links=links,
+        setup=(
+            PlannedStep("read:executable_build", 1),
+            PlannedStep("read:workspace_baseline", 1),
+            *(PlannedStep(f"create:{item.name}", 2) for item in fixtures),
+            *(
+                PlannedStep(f"create:link:{index}", 2)
+                for index in range(1, len(links) + 1)
+            ),
+            PlannedStep("read:fixture_identity", 1),
+        ),
+        experiments=(
+            ExperimentSpec(
+                id="M-SP2-ACQUISITION-PRODUCT",
+                hypothesis=(
+                    "The unchanged mixed product leaves its selected clients in "
+                    "DHCP mode on link-local addresses with the server enabled."
+                ),
+                required=True,
+                procedure="SP2_ACQUISITION_PRODUCT",
+                planned_operations=SP2_MIXED_PRODUCT_OPERATIONS,
+                capabilities=("sp2.mixed_dhcp_routed_product",),
+            ),
+            ExperimentSpec(
+                id="M-SP2-ACQUISITION-ARMS",
+                hypothesis=(
+                    "One typed explicit start or mode reassertion, unlike no "
+                    "intervention, makes a link-local DHCP client acquire an "
+                    "attributed lease from its intended pool."
+                ),
+                required=True,
+                procedure="SP2_ACQUISITION_ARMS",
+                planned_operations=SP2_ACQUISITION_ARMS_OPERATIONS,
+                capabilities=(
+                    "sp2.client_dhcp_mode_reassertion",
+                    "sp2.client_dhcp_explicit_start",
+                ),
+            ),
+            ExperimentSpec(
+                id="M-SP2-ACQUISITION-FINAL",
+                hypothesis=(
+                    "Router tables, client bindings and every physical pool "
+                    "are observed before cleanup."
+                ),
+                required=True,
+                procedure="SP2_ACQUISITION_FINAL",
+                planned_operations=SP2_MIXED_FINAL_OPERATIONS,
+                terminal_observation=True,
+            ),
+        ),
+        reserve=(
+            *(PlannedStep(f"remove:{item.name}", 2) for item in fixtures),
+            PlannedStep("read:restoration:1", 1),
+            PlannedStep("read:restoration:2", 1),
+            PlannedStep("release:run_bag", 1),
+        ),
+        budget=StageBudget(ceiling_operations, ceiling_seconds, reserve_seconds=420),
+        allowed_channels=("file",),
+        profile_id="SP2-MIXED-ACQUISITION",
+        profile_version="1",
+        steps=(
+            DiagnosticStageStep(
+                id="SP2-acquisition",
+                experiment_id="M-SP2-ACQUISITION-PRODUCT",
+                effect="request",
+                also_experiments=(
+                    "M-SP2-ACQUISITION-ARMS",
+                    "M-SP2-ACQUISITION-FINAL",
+                ),
+            ),
+        ),
+        selected_clients=SP2_MIXED_CLIENTS,
+    )
+
+
 #: The SP-1 stages; each exists only under campaign `SERVER-PT-SP1-ROUTED-01`.
 SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
 
@@ -3479,6 +3605,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.SP2_REMOTE_RELAY: _sp2_remote_relay(),
     QualificationStage.SP2_MIXED_PRODUCT: _sp2_mixed_product(),
     QualificationStage.SP2_CAPACITY_PRODUCT: _sp2_mixed_product(capacity=True),
+    QualificationStage.SP2_MIXED_ACQUISITION: _sp2_mixed_acquisition(),
 }
 
 

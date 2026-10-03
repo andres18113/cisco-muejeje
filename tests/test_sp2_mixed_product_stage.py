@@ -45,6 +45,7 @@ from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
     STAGE_CEILINGS,
     STAGE_DEFINITIONS,
     MeasurementConclusion,
+    MeasurementStatus,
     QualificationRecord,
     QualificationStage,
     RepositoryIdentity,
@@ -1085,3 +1086,20 @@ def test_a_client_out_of_dhcp_mode_keeps_the_terminal_inconclusive(tmp_path):
     final = run.measurement("M-SP2-MIXED-FINAL")
     assert final.facts["client_readings"]["BR2-DEFAULT-PC-01"]["mode"] is False
     assert final.conclusion is MeasurementConclusion.INCONCLUSIVE, final.facts
+
+
+def test_a_binding_row_without_a_device_keeps_the_mixed_terminal_inconclusive(
+    tmp_path,
+):
+    """A malformed terminal binding row is an incomplete inventory, not a crash."""
+
+    def bindings(payload):
+        payload["clients"].append({"found": True, "port_found": True, "error": ""})
+
+    run = _run(tmp_path, rewrite=_rewrite_final(bindings=bindings))
+
+    final = run.measurement("M-SP2-MIXED-FINAL")
+    assert final.status is MeasurementStatus.RAN, (final.status, final.reason)
+    assert final.conclusion is MeasurementConclusion.INCONCLUSIVE
+    assert final.facts["complete"] is False
+    assert "usable" not in final.facts

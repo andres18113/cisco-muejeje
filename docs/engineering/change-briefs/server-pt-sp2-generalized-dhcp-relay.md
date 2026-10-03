@@ -2231,17 +2231,26 @@ typed intervention per arm through existing runtimes:
 
 | Arm | Clients | Intervention | Question |
 | --- | --- | --- | --- |
-| A | HQ PC-01, BR2 PC-01 | ordinary DHCP-mode true reassertion on an already-on client | does a same-value assertion restart acquisition? |
-| B | HQ PC-02, BR1 PC-01 | one `AcquireDhcpLease` (`dhcpRun(port)`) under its execute-once claim | does the documented explicit start recover APIPA? |
-| D | HQ PC-03, BR1 PC-02 | ordinary mode false, then true | does a fresh activation after the server is ready acquire? |
-| C | HQ PC-04/05, BR1 PC-03, BR2 PC-02/03 | none | does anything recover passively in the same window? |
+| A `reassert` | HQ PC-01, BR1 PC-02 | ordinary DHCP-mode true reassertion on an already-on client | does a same-value assertion restart acquisition? |
+| B `explicit_start` | HQ PC-02, HQ PC-03, BR1 PC-01, BR2 PC-01 | one `AcquireDhcpLease` (`dhcpRun(port)`) under its execute-once claim | does the documented explicit start recover APIPA? |
+| C `control` | HQ PC-04/05, BR1 PC-03, BR2 PC-02/03 | none | does anything recover passively in the same window? |
+
+Design revision before implementation was frozen: an earlier draft of this
+table had a fourth arm, D (mode false, then true), on HQ PC-03 and BR1
+PC-02. There is no typed action that turns DHCP mode off without assigning
+a static address: the only typed mode-false path, `SetEndpointStaticAddress`,
+installs an address. So D would have been an addressing change as well as a
+mode transition, and it was dropped rather than modelled by a raw setter.
+Its clients joined the explicit-start and reassertion arms. Every physical
+pool therefore has an explicit start and a control, and HQ and BR1 also a
+reassertion. The registered stage (`SP2_ACQUISITION_ARMS`) and the prepared
+episode plan bind exactly this assignment.
 
 One bounded shared window then reads all eleven clients and the three
 physical pools with the existing readers and the stage's finite cadence. Each
 arm reports its first usable reading, exact intended-pool row join, gateway,
-resolver and stability. Outcomes decide the product change: B or D acquiring
-while C stays APIPA supports an explicit post-enable acquisition or activation
-order. A acquiring contradicts the same-value no-op hypothesis. No arm
+resolver and stability. Outcomes decide the product change: B acquiring while
+C stays APIPA supports an explicit post-enable acquisition. A acquiring contradicts the same-value no-op hypothesis. No arm
 acquiring raises the server-startup hypothesis. A control that acquires
 confounds attribution. A product that serves every client means e8 did not
 reproduce; that is reported, not hidden. The intervention measurement is a
@@ -2254,3 +2263,151 @@ on server enable and each arm's alternative behavior. Real composition proves
 precondition refusal, per-arm evidence, the execute-once claim, budget/stop
 behavior, terminal inventory and owned cleanup. Mixed and capacity definition
 hashes and their offline traces stay unchanged.
+
+
+### Acquisition discriminator implementation and offline verification
+
+`SP2-MIXED-ACQUISITION` v1 is registered beside the mixed and capacity
+stages. It reuses their fixture, contract binding, private product and
+terminal readers. Its ceiling is 3,400 operations/4,200 seconds, with a
+planned worst case of 3,202: setup 73, product 2,800, arms 200, terminal 90
+and reserve 39. Ownership follows the layers:
+
+- Domain `sp2_acquisition_discriminator.py` holds the pure precondition and
+  per-arm decisions.
+- `service_diagnostic_profiles.py` gains two projections. One is an ordinary
+  DHCP-mode reassertion with the four native guard fields cleared. The other
+  is one typed `AcquireDhcpLease` per client, derived from its own segment's
+  pool and waiting on that service's server-state read-back.
+- The driver is a second entry point in `workflows/sp2_mixed_product.py`,
+  because workflows may not import one another.
+- Q3-FL's dispatch classifier moved unchanged into `product_support` as
+  `acquisition_request_outcome`, so the two workflows share one decision.
+- The terminal gains an observation-only completeness mode; its default
+  keeps the mixed/capacity behavior and record shape.
+
+Fail-closed effects:
+
+- Arms run only after the product completed with known effects and a
+  persisted record. Every client must be read DHCP-on at 169.254/16 with a
+  usable MAC. The server must be read enabled on exactly its three planned
+  pools, and every pool scanned with no row for any client's MAC.
+- An unreproduced state stops the run before any intervention, and the arms
+  record states why it never ran. A product that serves everyone is NEGATIVE
+  for the e8 hypothesis.
+- Reassertion goes through the configuration applicator, and an unknown
+  reassertion stops the stage before any explicit start.
+- Explicit starts are applied one client per service application, with the
+  product's server rows retained (never redispatched), a per-start nonce and
+  a private copy of the acquisition capability.
+- The first unknown start outcome stops every later start; nothing is
+  retried. Every arm client always has a recorded intervention outcome.
+
+A sample counts toward acquisition only when it is complete: the client
+reading, an observed binding for the same address and mask, and every
+planned physical pool scanned. Acquisition then needs two consecutive such
+samples with one identity:
+
+- DHCP mode on;
+- an address in the intended lease window with the pool mask;
+- gateway and resolver from the binding;
+- an exact or normalization-equal row in the intended physical pool;
+- no positive, repeated, wrong-MAC, MAC-elsewhere or MAC-without-address row
+  in any other pool.
+
+An unknown intervention, an unread client or a failed binding lookup leaves
+a non-acquiring client undecided, never negative. A control that acquires
+confounds every arm. The ordinary endpoint batch swallows setter exceptions,
+so a reassertion is "dispatched" when its batch evaluated and its mode
+read-back verified; that limitation is recorded.
+
+Review dispositions (independent Codex passes; each finding reproduced RED
+before its fix unless noted):
+
+- Pass 1 was cut short by a session restart; its captured notes named two
+  defects. A binding row for a failed lookup counted as an observation, and
+  one application dispatched every start after an unknown outcome.
+- Pass 3: a MAC-elsewhere row in a competing pool was not treated as
+  competing; an unread competing pool still allowed acquisition; and the
+  binding was not required to describe the joined address.
+- Pass 4: a `pool_absent` answer counted as scanned, and the link-local
+  test was a text prefix.
+- Pass 5: two defects.
+  - A reassertion row that failed without a known non-submission, or any
+    reassertion over an unknown transport, was classified as not
+    dispatched. It now becomes `outcome_unknown` and blocks every explicit
+    start.
+  - A scan with a row after its end (`non_monotone`) or an unexplained throw
+    counted as read. A scan now counts only with contiguous rows from index
+    0 and at least two null or observed native-end tail entries.
+- Pass 6: a non-acquiring client with a missing MAC or a binding that
+  disagreed with its reading still counted as completely observed, and so
+  could become negative. Completeness now requires the identity and an
+  agreeing binding. Separately, the terminal's observation-only predicate
+  was evaluated for every stage: a mixed terminal binding row without a
+  device raised `TypeError` where the code at HEAD concluded INCONCLUSIVE. It
+  is now evaluated only for the discriminator and validates text device
+  identities; a mixed-stage regression pins the HEAD behavior.
+- Pass 7 approved: no violation of the five required properties survived,
+  the moved classifier is text-identical, and the planned budget is
+  3,202/3,400 operations.
+- From the helper reviews: the arms phase concludes its record in a
+  `finally` on every exit after the first effect, with every client's
+  outcome, an in-flight effect recorded as unknown, and every completed
+  window read retained. The persistence-loss regression was written after
+  its fix; a mutation disabling the partial conclusion makes it fail.
+
+Offline verification: 34 pure cases and nine real-composition stage cases
+(43 in total) cover patterns, stability, competing and hidden rows,
+undecided readings, failed bindings, absent, unread and incoherent pools,
+mismatched bindings, the native end, the precondition, both projections and
+the reassertion classifier. Stage scenarios cover:
+
+- explicit start only;
+- reassertion that also acquires;
+- a product that serves everyone;
+- a throwing `dhcpRun`;
+- persistence loss after one start;
+- a refusal midway through the window.
+
+The Node stub gained `dhcp_mode_reassert_acquires`, whose default keeps
+existing behavior. The e8 scenario uses a delayed APIPA fallback, because an
+instantaneous one contradicts the native guard's pending post-read. The
+refactor's handler inventory names the stage as an explicit successor
+delta. The 23-file affected set passes 715 cases.
+
+The e9 LIVE helpers are a reviewed successor of the approved e8 snapshot.
+Only `authority.py`, `make_episode.py` and `seal_episode.py` change:
+
+- they admit exactly three registered private stages;
+- they bind the acquisition arm assignment into preparation and opening;
+- every record must carry exactly its stage's declared measurement set;
+- the acquisition ARMS record must name every prepared arm client or
+  explain its absence;
+- the e8-specific twenty-artifact count is replaced by an exact named
+  verification set.
+
+Round 1 of the independent helper review failed with four blocking
+findings, all accepted: arm scope, ARMS evidence, a non-isolating allowlist
+control and non-discriminating artifact controls. Fixing them exposed a
+pre-existing weakness in the approved controls: their fixture ledger always
+held a closing record, so every launch-level negative refused vacuously.
+The harness now serves an open-episode ledger before sealing. A per-stage
+positive control proves each fixture reaches the claim boundary.
+
+Rounds 2 and 3 found two further blockers each: unrun ARMS after a
+persistence loss and unvalidated outcome values, then interrupted windows
+and an arm-agnostic outcome vocabulary. All are closed. Mutation evidence
+for the successor controls: 152 pass against the fixed candidate, while
+the round-1, round-2 and round-3 candidates fail 22, 12 and 1. Removing
+the stage allowlist is caught only by the two allowlist controls. Replacing
+the named set with a count of sixteen is caught only by the same-count
+substitution. Removing the outcome check is caught only by the nine outcome
+controls.
+
+Round 4 passed spec and quality with no blocking finding. The approved
+snapshot `137afcd5ff0a508681a49ccf1b3b891d531ab16023e40b4d68ddfa09b44479fa`
+is the e9 lead's `helper-snapshot.json`, and the approval record is
+`helper-review-approved-e9.json`. Helpers run only from `e9/lead/tools` with
+`python -B` and that externally pinned digest. The review package is
+retained under `data/services/sp2-governed/e9/helper-review/`.
