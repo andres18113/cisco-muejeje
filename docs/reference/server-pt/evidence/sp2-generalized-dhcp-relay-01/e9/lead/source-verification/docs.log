@@ -1,0 +1,118 @@
+
+ \u2502  \u26a0  Warning from the Material for MkDocs team
+ \u2502
+ \u2502  MkDocs 2.0, the underlying framework of Material for MkDocs,
+ \u2502  will introduce backward-incompatible changes, including:
+ \u2502
+ \u2502  � All plugins will stop working � the plugin system has been removed
+ \u2502  � All theme overrides will break � the theming system has been rewritten
+ \u2502  � No migration path exists � existing projects cannot be upgraded
+ \u2502  � Closed contribution model � community members can't report bugs
+ \u2502  � Currently unlicensed � unsuitable for production use
+ \u2502
+ \u2502  Our full analysis:
+ \u2502
+ \u2502  https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/
+
+INFO    -  Cleaning site directory
+INFO    -  Building documentation to directory: C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations\_site
+INFO    -  The following pages exist in the docs directory, but are not included in the "nav" configuration:
+  - architecture\cp-scale-qualification.md
+  - architecture\e95-stabilization.md
+  - architecture\e95-stage-3a4-readiness.md
+  - architecture\eigrp-runtime-qualification.md
+  - architecture\enterprise-compiler.md
+  - architecture\enterprise-configuration.md
+  - architecture\enterprise-control-plane.md
+  - architecture\enterprise-domain.md
+  - architecture\enterprise-security.md
+  - architecture\enterprise-services.md
+  - architecture\enterprise-voice.md
+  - architecture\ripv2-runtime-qualification.md
+  - architecture\router0-forwarding-workload-contract.md
+  - architecture\stage-3a4-bounded-live-qualification.md
+  - architecture\stage-3a4-serial-product-slice-2a.md
+  - architecture\stage-3a4-serial-product-slice-2b.md
+  - architecture\technical-debt.md
+  - architecture\university-topology-acceptance.md
+  - engineering\server-pt-sp2-claude-handoff-prompt.md
+  - engineering\server-pt-sp2-operational-handoff.md
+  - engineering\change-briefs\server-pt-c31-commissioning.md
+  - engineering\change-briefs\server-pt-sp2-generalized-dhcp-relay.md
+  - qa\e95-runtime-debt.md
+  - reference\cp-scale\README.md
+  - reference\cp-scale\ACCESS_POINT_POE_PROVENANCE_AUDIT_20260907.md
+  - reference\cp-scale\NEXT_GOVERNED_POE_LIVE_RELAY.md
+  - reference\cp-scale\POE2_AP_PSE_RESULT_20260907.md
+  - reference\cp-scale\POE_ACCESSPOINT_DIFFERENTIAL_20260907.md
+  - reference\cp-scale\POE_INLINE_CALIBRATION_20260907.md
+  - reference\cp-scale\ROUTER0_POE_FACTORY_STRUCTURE_20260907.md
+  - reference\cp-scale\ROUTER0_POE_OPERATOR_RUNBOOK.md
+  - reference\cp-scale\ROUTER0_POE_RESUME_20260906.md
+  - reference\cp-scale\ROUTER0_POE_SESSION_HANDOFF_20260906.md
+  - reference\cp-scale\diseno_logico_IMP.md
+  - reference\cp-scale\floor2_network_foundation_root_cause.md
+  - reference\cp-scale\topologia_completa_IMP.md
+  - reference\cp-scale\voice_root_cause_implementation_retrospective.md
+  - reference\cp-scale\canonical-live-evidence\poe3a-20260907T213914Z-20f42991\CLASSIFICATION.md
+  - reference\server-pt\server-pt-dhcp-public-delivery.md
+  - reference\server-pt\server-pt-services-brief-0850de3.md
+  - reference\server-pt\server-pt-services-brief-9973f66.md
+  - reference\server-pt\assignments\Codex_243_Focused_Closure_and_Remaining_LIVE.md
+  - reference\server-pt\assignments\Codex_A02_Evidence_Closure_and_Diagnostic_Preparation.md
+  - reference\server-pt\assignments\Codex_Continuation_A1_Q3_Q1_S1b.md
+  - reference\server-pt\assignments\Codex_Next_Product_Readiness_5296984.md
+  - reference\server-pt\assignments\Codex_ServerPT_Diagnostic_Goal_DRAFT.md
+  - reference\server-pt\assignments\Next_Work_S3_Q3_FASTLOOP_PROPOSAL.md
+  - reference\server-pt\assignments\Prompt_SP1_Routed_DNS_HTTP.md
+  - reference\server-pt\assignments\Prompt_SP2_Generalized_DHCP_Relay.md
+  - reference\server-pt\assignments\S1_Implementer_Prompt.md
+  - reference\server-pt\assignments\ServerPT_DHCP_Delegated_Autonomy_Mandate.md
+  - reference\server-pt\decisions\S0_BA45_Acceptance.md
+  - reference\server-pt\decisions\Server_PT_S0_Rev22_Approval_TD12.md
+  - reference\server-pt\evidence\campaign-d02-q3-q1-autofix-01\README.md
+  - reference\server-pt\evidence\campaign-diag-0ea-01\README.md
+  - reference\server-pt\evidence\campaign-diag-0ea-01\correction-02\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\DELIVERY.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e1\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e10\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e11\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e2\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e3\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e4\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e5\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e6\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e7\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e8\README.md
+  - reference\server-pt\evidence\dhcp-autonomy-02\e9\README.md
+  - reference\server-pt\evidence\dhcp-fl-01\README.md
+  - reference\server-pt\evidence\q-batch-0850de3\BATCH-STATUS.md
+  - reference\server-pt\evidence\q-batch-0850de3\q0-file\Q0-preparation-record.md
+  - reference\server-pt\evidence\sp1-routed-01\README.md
+  - reference\server-pt\evidence\sp1-routed-01\e1\README.md
+  - reference\server-pt\evidence\sp1-routed-01\e2\README.md
+  - reference\server-pt\evidence\sp1-routed-01\e3\README.md
+  - reference\server-pt\evidence\sp1-routed-01\e4\README.md
+  - reference\server-pt\evidence\sp1-routed-01\e5\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e1\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e2\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e3\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e4\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e5\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e6\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e7\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e7\lead\known-candidate-limitations.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e7\lead\operator-scope-note.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e8\README.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e8\lead\helper-verification\REVIEW.md
+  - reference\server-pt\evidence\sp2-generalized-dhcp-relay-01\e8\lead\helper-verification\brief-dispositions.md
+  - reference\server-pt\planning\rev2.2\Server-PT-Services-Implementer-Prompt-S0-rev2.2.md
+  - reference\server-pt\planning\rev2.2\Server-PT-Services-Plan-rev2.2.md
+  - reference\server-pt\planning\rev2.2\Server-PT-Services-Review-Resolution-rev2.2.md
+  - reference\server-pt\reviews\S1_0bddc9a_Review.md
+INFO    -  Doc file 'reference/cp-scale/README.md' contains an unrecognized relative link 'canonical-live-evidence/', it was left as is.
+INFO    -  Doc file 'reference/cp-scale/README.md' contains an unrecognized relative link 'prelive-evidence/', it was left as is.
+WARNING -  Doc file 'reference/cp-scale/README.md' contains a link '../../../handoff.md', but the target '../handoff.md' is not found among documentation files.
+WARNING -  Doc file 'reference/cp-scale/voice_root_cause_implementation_retrospective.md' contains a link '../../../handoff.md', but the target '../handoff.md' is not found among documentation files.
+INFO    -  Doc file 'reference/server-pt/evidence/campaign-diag-0ea-01/correction-02/README.md' contains an unrecognized relative link 'markers/', it was left as is.
+INFO    -  Documentation built in 18.27 seconds

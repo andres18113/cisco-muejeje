@@ -2427,3 +2427,77 @@ three-arm design, and pinned e9 helper bytes remain unchanged. New unit,
 integration, and LIVE tests are not applicable to this test-only correction;
 the existing structural tests verify its contract. Episode 9 remains risk L
 and follows its separately approved helper and evidence controls.
+
+
+## Episode 9 acquisition discriminator result (2026-10-03, risk L)
+
+Episode 9 executed `SP2-MIXED-ACQUISITION` v1 on clean source
+`ec3b01f84896c9a392f7cc142443460c9d76b8eb`, tree
+`dabbfd0a848e145e049f283073023f32dd842e07`, attempt
+`fd5257f2868208764d6d76595d649a53`, PT `9.0.1.0858` through `file`.
+The containment correction passed its focused test, all 35 containment tests,
+Ruff and independent read-only review. The complete affected suite passed 718
+on a no-change retry after a retained native Python/Pydantic access violation;
+the initial failure and environment remain archived without an inferred cause.
+The full suite passed 8,864 with 6 skipped and 3 warnings in 1,191.49 seconds;
+scale, clean exact-commit delivery, docs, namespace and whitespace passed.
+Exact-source CI `37131611036` passed all six jobs. Its complete metadata/logs
+and all sixteen source-verification artifacts are retained. The independently
+approved helper snapshot remained
+`137afcd5ff0a508681a49ccf1b3b891d531ab16023e40b4d68ddfa09b44479fa`;
+all eleven helpers ran unchanged with `python -B` from the e9 lead.
+
+The qualification stopped after 535 operations with
+`sp2_acquisition_precondition_not_reproduced`, with no secondary failure. The
+product failed its complete mixed-service contract. At the precondition sample,
+all eleven selected clients were observed in DHCP mode: ten held APIPA/16,
+while `BR1-DEFAULT-PC-02` held `10.80.16.2/28`, MAC `00E0.8F11.0627`, and a
+positive lease row in physical pool `BR1_DATA`. The precondition causes were
+`client_not_link_local:BR1-DEFAULT-PC-02:not_link_local` and
+`client_row_present:BR1-DEFAULT-PC-02:BR1_DATA`. The product measurement is
+INCONCLUSIVE, not accepted product evidence.
+
+The all-APIPA precondition was therefore not reproduced.
+`M-SP2-ACQUISITION-ARMS` is `not_run` / `not_evaluated`, reason
+`not_reached:sp2_acquisition_precondition_not_reproduced`: neither intervention
+arm ran, and their comparison remains unanswered. The terminal measurement is
+`supported_in_sample` only for its observation/inventory completeness contract.
+The acquisition onset and mechanism were not observed; the one positive client
+does not establish explicit-start or reassertion causality, renewal, exclusive
+serving, general relay support, capacity, default-catalog support or acceptance
+of the eleven-client product. No capability was promoted.
+
+An operator-provided screenshot of the same PC/address/MAC is retained as
+supplemental evidence; its capture time and process identity are not independently
+bound. The operator also reported an Offline UI indicator. The archived
+qualification records `transport.liveness=heartbeat_fresh` and the precondition
+stop above. A separate session-only read-only mailbox check found a fresh file
+heartbeat after the report; that supplemental check is not independently
+replayable from the sealed archive. The indicator's underlying connection was
+not diagnosed.
+
+Restoration was proven with `dirty_state=clean` and empty engine/coordination
+residue. The owned PID `16032` retired with `exited` on the first invocation.
+The final census contained no Packet Tracer process, mailbox file or campaign
+lock. Episode 9 closed `verified_clean`; the verified ledger has no open episode,
+2,618 operations and 6,416.133691 seconds committed, leaving 16,382 ordinary
+operations and 14,583.866309 seconds. No acquisition mutation was replayed and
+no channel fallback occurred.
+
+The approved seal/publication helpers verified 237 hashed entries and identical
+sealed/published manifest digest
+`05931aea66f633c233a49fe1a203b9cc961caa3be137ae23edc07c7e85110867`. The
+[complete e9 archive](../../reference/server-pt/evidence/sp2-generalized-dhcp-relay-01/e9/README.md)
+preserves qualification/product records, the closed campaign store, source
+verification, helper approval/bytes, operator supplement and cleanup evidence.
+The archive publication commit preserves the executed source identity above.
+The e9 result is truthful private evidence ready for independent archive review;
+SP2 phase completion and public-product acceptance are not claimed.
+
+Independent read-only archive audit: PASS, zero blocking findings. The reviewer
+verified the complete sealed/published/staged file set and byte hashes, exact
+source/CI/helper identities, the cited product bytes, withheld arms, terminal
+completeness versus usability, restoration/retirement/census and live/archived
+ledger equality. Its narrative qualification is reflected above: the later
+mailbox check is session context. Archive/evidence delivery is READY_FOR_REVIEW;
+the intervention comparison and SP2 phase/public-product acceptance remain open.

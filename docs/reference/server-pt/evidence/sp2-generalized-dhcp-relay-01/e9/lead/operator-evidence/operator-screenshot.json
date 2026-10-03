@@ -1,0 +1,15 @@
+{
+  "kind": "OPERATOR_SUPPLEMENTAL_SCREENSHOT",
+  "limitation": "The screenshot capture time and process identity are not independently bound. It supplements, and does not replace, the governed qualification/client/pool evidence.",
+  "operator_statement": "Only one PC has no-apipa.",
+  "received_at_utc": "2026-10-03T15:54:38.011149+00:00",
+  "retained_file": "no-apipa.png",
+  "sha256": "6e64f6eec1f420ec971626a3f3a2c9ae8089eb16777188129fa9269fb00e81e7",
+  "source_path": "C:\\Users\\Andres\\Downloads\\no-apipa.png",
+  "visible_device": "BR1-DEFAULT-PC-02",
+  "visible_dns": "10.80.1.10",
+  "visible_gateway": "10.80.16.1",
+  "visible_ipv4": "10.80.16.2",
+  "visible_mac": "00E0.8F11.0627",
+  "visible_prefix": 28
+}

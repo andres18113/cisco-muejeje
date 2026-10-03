@@ -1,0 +1,109 @@
+{
+  "acquisition_arms": {
+    "BR1-DEFAULT-PC-01": "explicit_start",
+    "BR1-DEFAULT-PC-02": "reassert",
+    "BR1-DEFAULT-PC-03": "control",
+    "BR2-DEFAULT-PC-01": "explicit_start",
+    "BR2-DEFAULT-PC-02": "control",
+    "BR2-DEFAULT-PC-03": "control",
+    "HQ-DEFAULT-PC-01": "reassert",
+    "HQ-DEFAULT-PC-02": "explicit_start",
+    "HQ-DEFAULT-PC-03": "explicit_start",
+    "HQ-DEFAULT-PC-04": "control",
+    "HQ-DEFAULT-PC-05": "control"
+  },
+  "allocated_operations": 3410,
+  "allocated_seconds": 4800,
+  "allocation_arithmetic": {
+    "lifecycle_operations": 10,
+    "lifecycle_seconds": 600,
+    "limitation": "joint experimental cutoff; not funding all independent worst-case reader/helper tails",
+    "protected_cleanup_operations": 39,
+    "protected_cleanup_seconds": 420,
+    "stage_minimum_operations": 3202,
+    "stage_operations": 3400,
+    "stage_seconds": 4200
+  },
+  "attempt_ids": [
+    "fd5257f2868208764d6d76595d649a53"
+  ],
+  "authorization_id": "SERVER-PT-SP2-E9-fd5257f2868208764d6d76595d649a53",
+  "binding_hashes": {
+    "e5": "2e2ef33e9e7d4305b5de2c45b0f71de1c6f8389c90fa2f3df8b62468ee175180",
+    "manifest": "569ad187ae834e982c3d76a94ed469708fc277a923f03a2dedfca97a9d492c2d",
+    "normalized_e6": "6e978c7eecaee52becfddcaf94a3f90ee5eeed7193cd176e91198c181e916d7a",
+    "service_catalog": "d358fda37317120011783b2b78dc8c7ac332d18d4e67e1c1650775a05b255b12",
+    "topology": "2aa800ab75dbdb4a614f30bb3a8cb4afbdf50bbb73c74e47bd636cb024d7134b"
+  },
+  "build": "9.0.1.0858",
+  "campaign_id": "SERVER-PT-SP2-GENERALIZED-DHCP-RELAY-01",
+  "channel": "file",
+  "episode": 9,
+  "exact_ci_file": "exact-ci.json",
+  "exact_ci_sha256": "12fc0d3fbdc7c38eeaff4e3c111021669172752cb118ce9c3610217e7d6f415d",
+  "helper_snapshot_sha256": "137afcd5ff0a508681a49ccf1b3b891d531ab16023e40b4d68ddfa09b44479fa",
+  "instance_token": "a43721f48e96d671c7b9d74f5fa56a94",
+  "ledger_before_preparation": {
+    "committed_operations": 2083,
+    "committed_seconds": 4868.084212,
+    "ordinary_operations_left": 16917,
+    "ordinary_seconds_left": 16131.915788
+  },
+  "native_support_claim": "none; private candidate discriminator",
+  "permitted_effects": [
+    "One owned disposable exact-build file-channel laboratory.",
+    "Only the maintained registered stage fixture and E5/E6 product.",
+    "After the product, only when the link-local precondition is read: one ordinary DHCP-mode reassertion per reassert-arm client and one typed AcquireDhcpLease per explicit-start client under its execute-once claim; never repeated.",
+    "Current indexed raw lease scans and read-only terminal observations.",
+    "Protected fixture cleanup and maintained exact-owned cohort retirement."
+  ],
+  "prepared_at_utc": "2026-10-03T15:24:19.308832+00:00",
+  "profile_id": "SP2-MIXED-ACQUISITION",
+  "profile_version": "1",
+  "question": "Does the unchanged mixed product again leave every client in DHCP mode on a link-local address with the server enabled, and then does one typed explicit start (dhcpRun) or one ordinary DHCP-mode reassertion, unlike untouched controls, make a client hold a stable lease attributed to its intended physical pool?",
+  "selected_clients": [
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "HQ-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-04",
+    "HQ-DEFAULT-PC-05",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-03",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-03"
+  ],
+  "source_sha": "ec3b01f84896c9a392f7cc142443460c9d76b8eb",
+  "source_tree": "dabbfd0a848e145e049f283073023f32dd842e07",
+  "stage": "SP2-MIXED-ACQUISITION",
+  "stop_rule": "Stop on source/process/receiver/fixture/policy mismatch, unknown mutation outcome, unreadable or contradictory evidence, budget or persistence failure. Finalize without mutation replay or channel fallback. No phone effects or native phone UI/call validation.",
+  "targets": [
+    "BR1-EDGE-RTR-01",
+    "BR2-EDGE-RTR-01",
+    "HQ-EDGE-RTR-01",
+    "BR1-DEFAULT-ACCESS-SW-01",
+    "BR2-DEFAULT-ACCESS-SW-01",
+    "HQ-DEFAULT-ACCESS-SW-01",
+    "HQ-DEFAULT-DNS-01",
+    "BR1-DEFAULT-PC-01",
+    "BR1-DEFAULT-PC-02",
+    "BR1-DEFAULT-PC-03",
+    "BR2-DEFAULT-PC-01",
+    "BR2-DEFAULT-PC-02",
+    "BR2-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-01",
+    "HQ-DEFAULT-PC-02",
+    "HQ-DEFAULT-PC-03",
+    "HQ-DEFAULT-PC-04",
+    "HQ-DEFAULT-PC-05"
+  ],
+  "tests_run": [
+    "8864 passed, 6 skipped, 3 warnings in 1191.49s; affected suite complete retry 718 passed after a retained initial native Python access violation, with no source or environment change.",
+    "4 scale cases passed in 60.71s, including 997 clients.",
+    "Clean exact-commit quality gate --base cisco/main --delivery-commit HEAD passed.",
+    "Namespace, docs and whitespace passed; only known documentation links.",
+    "Exact-source six-job CI 37131611036 succeeded."
+  ],
+  "verification_summary_sha256": "e81bd56dce425e3ec6975441c07c096464d22cdb7332f9d9ed53f7858f8ad182"
+}

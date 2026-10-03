@@ -1,0 +1,57 @@
+{
+  "blocking_findings": [],
+  "controls": {
+    "failed": 0,
+    "file": "test_helper_controls.py",
+    "log": "controls-r6-fixed-r6.log",
+    "passed": 152,
+    "sha256": "8a5448d2cd54180c57652d4aa19fd16b44163616ed454206352952df4d02b7d5",
+    "xml_sha256": "253163ccdd9d9bf0a3d0ae40eb6ded91bb55872e0f06fcbb2c2e7143c103758c"
+  },
+  "kind": "INDEPENDENT_PROSPECTIVE_HELPER_REVIEW",
+  "mutation_evidence": {
+    "count16_mutant_failed": 1,
+    "no_allowlist_mutant_failed": 2,
+    "no_outcome_check_mutant_failed": 9,
+    "round1_candidate_failed": 22,
+    "round2_candidate_failed": 12,
+    "round3_candidate_failed": 1
+  },
+  "native_work_performed": false,
+  "observed_at_utc": "2026-10-03T13:41:35.693962+00:00",
+  "phase_complete": false,
+  "predecessor_snapshot_sha256": "db5128268d77188099cb82f6fad411785122c55e4dfbd9229a306a74ef0e0e8b",
+  "reviewed_candidate_file": "data/services/sp2-governed/e9/helper-review/helper-snapshot-candidate-r4.json",
+  "reviewer": "Codex (independent read-only task); rounds task-murmuwv8, task-murp4m4w, task-murq18y5, task-musexefz",
+  "rounds": [
+    {
+      "record": "review-result-1.md",
+      "result": "SPEC FAIL; QUALITY FAIL; BLOCKING 4",
+      "round": 1,
+      "sha256": "8730e4d1d7a83f0939723e48ced06a919bd7196082e70af809c22c70648e6f09"
+    },
+    {
+      "record": "review-result-2.md",
+      "result": "SPEC FAIL; QUALITY FAIL; BLOCKING 2",
+      "round": 2,
+      "sha256": "eba79af192afe9a233a37dabf2aca0ceeb629a518765c94b2869add95f9ec634"
+    },
+    {
+      "record": "review-result-3.md",
+      "result": "SPEC FAIL; QUALITY FAIL; BLOCKING 2",
+      "round": 3,
+      "sha256": "c29640d4c3c7b4054e34ed93cbb557748a733cd13ada6dca0b4ee40a3d8e6086"
+    },
+    {
+      "record": "review-result-4.md",
+      "result": "SPEC PASS; QUALITY PASS; BLOCKING 0",
+      "round": 4,
+      "sha256": "43ce521ad12f6ac7f8b745826e84acd1afb97e2d9ff4710f6a051c9119759a8a"
+    }
+  ],
+  "scope": "Exact prospective helper bytes only; native preflight, source CI and phase acceptance remain separate",
+  "snapshot_file": "data/services/sp2-governed/e9/lead/helper-snapshot.json",
+  "snapshot_sha256": "137afcd5ff0a508681a49ccf1b3b891d531ab16023e40b4d68ddfa09b44479fa",
+  "spec_compliance": "PASS",
+  "task_quality": "PASS"
+}

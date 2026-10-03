@@ -1,0 +1,20 @@
+{
+  "affected_retry_result": "718 passed in 172.91s",
+  "artifact_sha256": {
+    "affected-first.exit": "0065eb2859d3d8935a9b67baade22b7fec608935486ce046841c2b5ab8133241",
+    "affected-first.log": "3c7d77182212a98a1cb57396d5e2e87260b4a50d00ad6cce606c1c93428270cf",
+    "capacity-focused.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "capacity-focused.log": "71740014e3cec7dd68e2aae361c74391f8c676dec72d8fd682e18dd659ff7e94"
+  },
+  "first_affected_xml_present": false,
+  "first_staging": "data/services/sp2-governed/continuation-20261002/gates-ec3b01f84896-20261003T093530",
+  "focused_result": "1 passed in 3.16s",
+  "head": "ec3b01f84896c9a392f7cc142443460c9d76b8eb",
+  "initial_affected_exit": -1073741819,
+  "initial_failure": "Windows native access violation in pydantic.model_dump while calculating the capacity configuration semantic hash",
+  "limitation": "The native process crash did not recur in the focused run or full affected retry; its root cause remains undetermined. The accepted affected evidence is the complete rerun on the same exact source.",
+  "observed_at_utc": "2026-10-03T14:43:43.869204+00:00",
+  "retry_staging": "data/services/sp2-governed/continuation-20261002/gates-ec3b01f84896-20261003T093530-affected-retry",
+  "source_or_environment_changed_for_retry": false,
+  "tree": "dabbfd0a848e145e049f283073023f32dd842e07"
+}

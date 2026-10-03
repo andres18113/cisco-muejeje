@@ -1,0 +1,13 @@
+{
+  "base": "6263344e31ba3b0de6539d652f2cd06fc73a3562",
+  "head": "ec3b01f84896c9a392f7cc142443460c9d76b8eb",
+  "observed_at_utc": "2026-10-03T14:55:19.962109+00:00",
+  "package_file": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\src\\packet_tracer_mcp\\__init__.py",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "purpose": "Offline source environment and native-crash diagnostic context; does not substitute for isolation proof in each LIVE process.",
+  "pydantic": "2.13.5",
+  "pydantic_core": "2.46.5",
+  "python_version": "3.12.10",
+  "sys_executable": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\.venv\\Scripts\\python.exe",
+  "tree": "dabbfd0a848e145e049f283073023f32dd842e07"
+}

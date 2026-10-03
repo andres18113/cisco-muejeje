@@ -1,0 +1,10 @@
+
+SP2-SCALE clients=2 services=2 group_scans=4 dispatches=32 dispatches_per_client=16.0 response_bytes=14305 record_bytes=143486 seconds=0.41 peak_mib=1.8
+.
+SP2-SCALE clients=21 services=5 group_scans=10 dispatches=164 dispatches_per_client=7.8 response_bytes=85770 record_bytes=784443 seconds=0.88 peak_mib=6.5
+.
+SP2-SCALE clients=201 services=5 group_scans=10 dispatches=1244 dispatches_per_client=6.2 response_bytes=757916 record_bytes=5351143 seconds=5.07 peak_mib=40.1
+.
+SP2-SCALE clients=997 services=5 group_scans=10 dispatches=6020 dispatches_per_client=6.0 response_bytes=3559991 record_bytes=24607628 seconds=37.64 peak_mib=184.3
+.
+4 passed in 60.71s (0:01:00)
