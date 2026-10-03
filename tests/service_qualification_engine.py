@@ -527,8 +527,11 @@ const dhcpServerProcess = (dev) => {
       dhcpSetterCalls.setEnable++;
       dhcpTimeline.push({effect: 'setEnable', value: !!value});
       state.enabled = !!value;
-      if (value && config.dhcp_retry_on_server_enable) {
+      if (value && (config.dhcp_retry_on_server_enable
+          || (config.dhcp_retry_on_server_enable_clients || []).length)) {
         for (const client of devices.filter((item) => item.model === 'PC-PT')) {
+          if (!config.dhcp_retry_on_server_enable
+              && !config.dhcp_retry_on_server_enable_clients.includes(client.name)) { continue; }
           for (const port of client.ports.filter((item) => item.dhcpMode)) {
             acquire(client, port);
           }
@@ -670,6 +673,11 @@ const dhcpClientProcess = (dev) => ({
     dhcpRuns.push({device: dev.name, port: String(portName)});
     if (!port) { throw new Error('dhcp client port missing'); }
     acquire(dev, port);
+    if (config.dhcp_disable_server_after_acquire) {
+      for (const server of devices.filter((item) => item.model === 'Server-PT')) {
+        dhcpState(server).enabled = false;
+      }
+    }
   },
   getDataOfPort: (portName) => {
     const port = dev.ports.find((item) => item.name === String(portName));

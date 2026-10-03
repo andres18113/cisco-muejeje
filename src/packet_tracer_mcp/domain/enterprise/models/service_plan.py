@@ -529,6 +529,7 @@ class AcquireDhcpLease(BaseServiceAction):
     netmask: str
     claim_ref: str
     nonce: str = ""
+    required_address_state: Literal["dhcp_mode", "link_local"] = "dhcp_mode"
 
 
 ServiceAction = Annotated[

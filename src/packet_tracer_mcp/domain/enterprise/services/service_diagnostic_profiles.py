@@ -29,6 +29,7 @@ import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from typing import Literal
 
 from ..models.configuration import (
     ConfigurationAction,
@@ -919,6 +920,7 @@ def sp2_acquisition_start_plan(
     *,
     device_names: Sequence[str],
     nonce: str,
+    required_address_state: Literal["dhcp_mode", "link_local"] = "dhcp_mode",
 ) -> ServicePlan:
     """Project E6 to the applied DHCP server setup plus one explicit start each.
 
@@ -993,6 +995,7 @@ def sp2_acquisition_start_plan(
                     "sp2-dhcp-claim", pool.service_id, mode.device_id
                 ),
                 nonce=nonce,
+                required_address_state=required_address_state,
             )
         )
     actions = [*server_actions, *acquisitions]

@@ -356,6 +356,7 @@ def _product_contract(
         QualificationStage.SP2_MIXED_PRODUCT,
         QualificationStage.SP2_CAPACITY_PRODUCT,
         QualificationStage.SP2_MIXED_ACQUISITION,
+        QualificationStage.SP2_ELIGIBLE_ACQUISITION,
     ):
         # The acquisition discriminator composes exactly the mixed contract.
         mixed = (
@@ -776,6 +777,7 @@ STAGE_HANDLERS: Mapping[QualificationStage, Callable[[Execution], object]] = (
             QualificationStage.SP2_MIXED_PRODUCT: run_sp2_mixed_product,
             QualificationStage.SP2_CAPACITY_PRODUCT: run_sp2_mixed_product,
             QualificationStage.SP2_MIXED_ACQUISITION: run_sp2_mixed_acquisition,
+            QualificationStage.SP2_ELIGIBLE_ACQUISITION: run_sp2_mixed_acquisition,
         }
     )
 )

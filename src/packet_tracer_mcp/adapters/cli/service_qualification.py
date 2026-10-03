@@ -964,6 +964,7 @@ def fixture_plans(
             QualificationStage.SP2_MIXED_PRODUCT,
             QualificationStage.SP2_CAPACITY_PRODUCT,
             QualificationStage.SP2_MIXED_ACQUISITION,
+            QualificationStage.SP2_ELIGIBLE_ACQUISITION,
         ):
             # Exact-build port evidence where the build has it; a model
             # without any (the 2911) keeps its catalogued ports, which are

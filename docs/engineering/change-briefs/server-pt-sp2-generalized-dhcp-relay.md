@@ -2501,3 +2501,103 @@ completeness versus usability, restoration/retirement/census and live/archived
 ledger equality. Its narrative qualification is reflected above: the later
 mailbox check is session context. Archive/evidence delivery is READY_FOR_REVIEW;
 the intervention comparison and SP2 phase/public-product acceptance remain open.
+
+## E9 continuation: eligible-cohort acquisition design (2026-10-03, risk L)
+
+Authority: `SERVER-PT-SP2-E9-CONTINUATION-03` v1.0.0, retained under
+`docs/reference/server-pt/assignments/Prompt_SP2_E9_Continuation.md`.
+Starting checkout/branch: `Cisco-MCP-server-services-goal-foundations`,
+`feature/server-pt-goal-foundations`, clean `2d38364dfc5269accc427ae1a99b359b3132d366`,
+tree `2be89db07854b8bd266fc28e3f9e3804e3efb65b`. Current `cisco/main` is
+`6263344e31ba3b0de6539d652f2cd06fc73a3562`. Interpreter and production import
+origins match this checkout; no retired namespace or pytest was loaded in the
+inspection process. Interactive loader effectiveness remains unobservable.
+
+E9's original product status is failed. PC02's eleven later usable samples are
+retained-state observations; the ten other clients' dependent requests were
+withheld. The v1 all-APIPA oracle refused correctly; neither arm ran. Its source,
+profile, spent attempt, archive bytes and interpretation remain immutable.
+
+### Prospective question and rules
+
+Select recovery of eligible clients as the smaller discriminator. Initial
+activation ordering remains a competing hypothesis, not a supported correction.
+Create a separate `SP2-ELIGIBLE-ACQUISITION` profile v2 using the same mixed
+fixture, typed product, probes, runtimes, stores and ownership controls. Keep
+`SP2-MIXED-ACQUISITION` v1 executable with its unchanged all-client oracle.
+
+Before outcomes, assign HQ PC02/PC03, BR1 PC01 and BR2 PC01 to explicit start;
+all other selected clients are no-intervention controls. Do not reassign arms.
+Eligibility requires observed DHCP-on APIPA/16, usable unique MAC, observed
+binding readers, exact enabled server policy, and complete scans with no client
+identity row in any physical pool. A usable assigned client is an observer,
+never an intervention success. Unknown/local unreadable state is ineligible;
+shared unreadability, wrong/duplicate identity, competing pool or policy drift
+refuses the affected comparison. Each compared pool needs eligible explicit
+start and control subjects. Report the actual remaining family, not a universal
+acquisition claim.
+
+Take fresh shared client/binding/server/pool observations before each individual
+typed `AcquireDhcpLease` effect. A client acquiring before its effect becomes an
+observer by the declared rule; never force it back into failure. Freeze the
+assignment and retain every reclassification. No reassertion arm is needed for
+this question. Refuse after uncertain dispatch, persistence/authority loss or
+exhausted budget; never repeat an ambiguous mutation.
+
+Read all selected subjects and all pools in one shared window. Record actual
+elapsed boundaries for every auxiliary read, intervention and sample; waits
+alone are not elapsed time. Preserve activation order and uncertain activation
+ages, which constrain causal interpretation. A stable pair records observed
+acquisition; later missing/contradictory prerequisites cannot authorize a causal
+success. Control acquisition confounds causal credit. A simulation schedule is
+offline scenario evidence only. No manual UI interaction is part of measurement.
+
+### Implementation and verification plan
+
+1. Add pure eligibility and sustained-outcome rules with RED-first cases for
+   E9's one assigned/ten APIPA mix, unreadable scans, duplicate identities,
+   missing comparisons, pre-effect acquisition and late shared contradictions.
+2. Register the separate profile and integrate it into existing qualification
+   composition, admission and execution. Exercise real generated acquisition
+   scripts and reloaded records, including dispatch/persistence/budget failures.
+3. Correct the common session's omitted E6 wait allowance at its owning seam;
+   its E5 already receives it. Reproduce the omission before correction and
+   verify real polling bounds. This defect does not explain historical E9,
+   whose qualification runtime separately supplies its enclosing allowance.
+4. Publish the post-E9 passive investigation as a dated supplement outside the
+   sealed E9 archive. Pin original bytes and distinguish reported observations
+   from surviving raw inspection evidence and from causal inference.
+5. Run focused/affected/full tests, actual offline scale, quality/docs/namespace/
+   whitespace, clean exact-delivery gate and exact-SHA CI. Independently review
+   the concrete prospective helper snapshot before any LIVE effect; the old
+   helper approval covers only its old bytes.
+6. Under verified fresh ledger/process/source authority, measure the discriminator
+   and use its supported outcome to choose the smallest maintained correction.
+   Then demonstrate mixed and simultaneous local-36 capacity through the public
+   default-catalog path. Do not promote a private result or mark this step done
+   before those native requirements are demonstrated.
+
+The read-only ledger audit verified 2,618 committed operations and
+6,416.133691 seconds, leaving 16,382 ordinary operations and 14,583.866309 seconds
+with no open episode. This is a snapshot, not a new resource grant. Recheck before
+effects and preserve 1,000 operations/600 seconds of campaign finalization.
+Status remains ACTIVE_CONTINUATION_NOT_PHASE_ACCEPTANCE.
+### V2 effect-boundary refinement
+
+Independent review reproduced an excluded observer's wrong-MAC own-pool row
+escaping shared refusal. A RED-first regression now covers that contradiction
+in both cohort admission and the retained window. V2 checks own-pool conflicts
+for all selected subjects; local exclusion cannot authorize shared evidence.
+
+Source review also found that the typed explicit-start script only checks DHCP
+mode immediately before claiming the effect. A passive acquisition between the
+shared census and that call must not cause an unnecessary restart. Add an
+internal serialized `required_address_state` to `AcquireDhcpLease`, defaulting
+to its existing DHCP-mode contract. The eligible projection selects `link_local`;
+the maintained generator observes the documented HostPort address/mask getters
+inside the same guarded script, before the claim and `dhcpRun`. Changed or unread
+state dispatches no acquisition. A known non-dispatch for an already-addressed
+subject is re-read and reclassified as an observer; uncertainty remains stopped.
+Test actual generated scripts for assigned, APIPA and unreadable states and
+unchanged ordinary acquisition. This is a typed effect prerequisite, not a new
+public input, transport, dispatcher or native retry claim.

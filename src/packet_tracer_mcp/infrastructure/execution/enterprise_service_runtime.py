@@ -516,6 +516,8 @@ _SKIP_ACCOUNT_IDENTITY_MISMATCH = "account_identity_mismatch"
 _SKIP_SUBJECT_CLAIM_UNREADABLE = "subject_claim_unreadable"
 _SKIP_POOL_CONFLICT = "pool_conflict"
 _SKIP_NATIVE_CLIENT_PRECONDITION = "native_client_precondition"
+_SKIP_DHCP_CLIENT_NOT_LINK_LOCAL = "dhcp_client_not_link_local"
+_SKIP_DHCP_CLIENT_STATE_UNOBSERVED = "dhcp_client_state_unobserved"
 _SKIP_DHCP_MODE_NOT_ENABLED = "dhcp_mode_not_enabled"
 _SKIP_DHCP_MODE_INVALID = "dhcp_mode_invalid"
 _SKIP_DHCP_MODE_GETTER_ERROR = "dhcp_mode_getter_error"
@@ -529,6 +531,8 @@ _REFUSALS = frozenset(
         _SKIP_SUBJECT_CLAIM_UNREADABLE,
         _SKIP_POOL_CONFLICT,
         _SKIP_NATIVE_CLIENT_PRECONDITION,
+        _SKIP_DHCP_CLIENT_NOT_LINK_LOCAL,
+        _SKIP_DHCP_CLIENT_STATE_UNOBSERVED,
         _SKIP_DHCP_MODE_NOT_ENABLED,
         _SKIP_DHCP_MODE_INVALID,
         _SKIP_DHCP_MODE_GETTER_ERROR,
@@ -1682,6 +1686,8 @@ class PacketTracerEnterpriseServiceRuntime:
                     _SKIP_OWN_CLAIM_REPLAYED,
                     _SKIP_PRECONDITION_UNOBSERVED,
                     _SKIP_SUBJECT_CLAIM_UNREADABLE,
+                    _SKIP_DHCP_CLIENT_NOT_LINK_LOCAL,
+                    _SKIP_DHCP_CLIENT_STATE_UNOBSERVED,
                     _SKIP_DHCP_MODE_NOT_ENABLED,
                     _SKIP_DHCP_MODE_INVALID,
                     _SKIP_DHCP_MODE_GETTER_ERROR,
@@ -1772,6 +1778,7 @@ class PacketTracerEnterpriseServiceRuntime:
             _SKIP_ACCOUNT_IDENTITY_MISMATCH,
             _SKIP_POOL_CONFLICT,
             _SKIP_NATIVE_CLIENT_PRECONDITION,
+            _SKIP_DHCP_CLIENT_NOT_LINK_LOCAL,
             _SKIP_DHCP_MODE_NOT_ENABLED,
         }:
             # Unlike the other refusals, this one IS a completed pre-read: it
@@ -2519,6 +2526,22 @@ class PacketTracerEnterpriseServiceRuntime:
         key = json.dumps(
             f"{_DHCP_CLAIM_PREFIX}{action.host_device_id}:{action.interface}"
         )
+        address_guard: list[str] = []
+        if action.required_address_state == "link_local":
+            address_guard = [
+                "var __eligible=false;try{if(port&&typeof port.getIpAddress==='function'&&"
+                "typeof port.getSubnetMask==='function'){var __ip=port.getIpAddress(),"
+                "__mask=port.getSubnetMask();if(typeof __ip==='string'&&typeof __mask==='string'){"
+                "r.pre_read=true;r.pre=__dg(__ip+'/'+__mask);"
+                "var __parts=__ip.split('.');__eligible=__parts.length===4&&"
+                "__parts[0]==='169'&&__parts[1]==='254'&&__mask==='255.255.0.0';"
+                "for(var __j=0;__j<__parts.length&&__eligible;__j++){"
+                "if(!/^(0|[1-9][0-9]{0,2})$/.test(__parts[__j])||Number(__parts[__j])>255){__eligible=false;}}"
+                "if(!__eligible){r.skip_reason='dhcp_client_not_link_local';}}"
+                "else{r.skip_reason='dhcp_client_state_unobserved';}}"
+                "else{r.skip_reason='dhcp_client_state_unobserved';}}"
+                "catch(e){r.skip_reason='dhcp_client_state_unobserved';}if(__eligible){"
+            ]
         return [
             row,
             f"var __key={key},__aid={action_id},__if={interface},__nonce={nonce};",
@@ -2541,10 +2564,12 @@ class PacketTracerEnterpriseServiceRuntime:
             f'else if(mode_state==="invalid"){{r.skip_reason="{_SKIP_DHCP_MODE_INVALID}";}}'
             f'else if(mode_state==="error"){{r.skip_reason="{_SKIP_DHCP_MODE_GETTER_ERROR}";}}'
             f'else if(mode!==true||!p){{r.skip_reason="{_SKIP_PRECONDITION_UNOBSERVED}";}}else{{',
+            *address_guard,
             "r.pre_read=true;r.pre=__dg(mode);"
             "__c[__key]={state:'in_progress',op_id:__aid,interface:__if,nonce:__nonce};",
             f"try{{r.attempted=true;p.dhcpRun(__if);__c[__key].state='completed';}}"
             f"catch(e){{__c[__key].state='unknown';r.call_error={reader}(e);}}",
+            *(["}"] if address_guard else []),
             "}}results.push(r);",
         ]
 

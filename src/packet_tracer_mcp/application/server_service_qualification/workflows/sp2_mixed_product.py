@@ -50,6 +50,7 @@ from ....domain.enterprise.models.service_qualification import (
     SP2_ACQUISITION_WAIT_SECONDS,
     SP2_CANDIDATE_LABEL,
     SP2_CAPACITY_SITE_CLIENTS,
+    SP2_ELIGIBLE_ACQUISITION_ARMS,
     SP2_MIXED_PRODUCT_OPERATIONS,
     SP2_MIXED_SERVER,
     SP2_MIXED_SITE_CLIENTS,
@@ -89,6 +90,11 @@ from ....domain.enterprise.services.sp2_acquisition_discriminator import (
     AcquisitionSample,
     acquisition_precondition,
     assess_acquisition_arms,
+)
+from ....domain.enterprise.services.sp2_eligible_acquisition import (
+    EligibleCohort,
+    assess_eligible_arms,
+    eligible_cohort,
 )
 from ....domain.enterprise.services.topology_identity import compute_topology_hashes
 from ...use_cases.apply_configuration import ConfigurationApplicator
@@ -935,6 +941,7 @@ class _Held:
     runtimes: Any = None
     product: ServiceStageResult | None = None
     readings: dict[str, Any] = field(default_factory=dict)
+    cohort: EligibleCohort | None = None
 
 
 def run_sp2_mixed_acquisition(execution: Execution) -> None:
@@ -1061,6 +1068,8 @@ def _precondition_assessment(
     execution: Execution, run: _MixedRun, held: _Held, mixed: Assessment
 ) -> Assessment:
     """Read every client, the server and every pool, then decide the state."""
+    if _eligible_profile(execution):
+        return _eligible_precondition_assessment(execution, run, held, mixed)
     product = held.product
     assert product is not None
     clients = run.clients
@@ -1140,7 +1149,9 @@ def _precondition_assessment(
     )
 
 
-def _explicit_start_capabilities(records: Mapping[str, Any]) -> dict[str, Any]:
+def _explicit_start_capabilities(
+    records: Mapping[str, Any], *, profile_id: str = "SP2-MIXED-ACQUISITION"
+) -> dict[str, Any]:
     """Admit the explicit start privately, for this arm only.
 
     The composed records are copied; only the acquisition record changes,
@@ -1155,7 +1166,7 @@ def _explicit_start_capabilities(records: Mapping[str, Any]) -> dict[str, Any]:
         update={
             "support": CapabilityStatus.SUPPORTED,
             "source": (
-                "Private SP2-MIXED-ACQUISITION candidate: one documented "
+                "Private " + profile_id + " candidate: one documented "
                 "DhcpClientProcess.dhcpRun per arm client; unqualified"
             ),
         }
@@ -1225,7 +1236,11 @@ def _arms_phase(
     ids = (ARMS_ID,)
     if not execution.begin(ids, ARMS_PROCEDURE):
         return
-    arms = dict(SP2_ACQUISITION_ARMS)
+    arms = (
+        {name: SP2_ELIGIBLE_ACQUISITION_ARMS[name] for name in held.cohort.eligible}
+        if held.cohort is not None
+        else dict(SP2_ACQUISITION_ARMS)
+    )
     reassert = sorted(name for name, arm in arms.items() if arm == ARM_REASSERT)
     start = sorted(name for name, arm in arms.items() if arm == ARM_EXPLICIT_START)
     # Every arm client has an outcome from the start: controls are untouched,
@@ -1236,7 +1251,9 @@ def _arms_phase(
         else "not_dispatched:not_reached"
         for name in arms
     }
-    facts: dict[str, Any] = {}
+    facts: dict[str, Any] = (
+        {"cohort": _cohort_facts(held.cohort)} if held.cohort is not None else {}
+    )
     progress: dict[str, Any] = {"begun": False, "in_flight": ()}
     with (
         execution.ledger.ordinary_limit(
@@ -1303,40 +1320,46 @@ def _arms_effects_and_window(
     product = held.product
     assert product is not None and product.service_result is not None
     context = product_runtime_context(contract)
-    if not execution.run.transition(f"experiment:{ARMS_PROCEDURE}:reassert"):
-        execution.stop("persistence:sp2_acquisition_reassert_not_announced")
-        return
-    reassert_plan = sp2_acquisition_reassert_plan(
-        contract.configuration_plan, device_names=reassert
-    )
-    progress.update(begun=True, in_flight=tuple(reassert))
-    with execution.ledger.effect_of("sp2:acquisition:reassert"):
-        reassert_result = ConfigurationApplicator(held.runtimes.configuration).apply(
-            reassert_plan,
-            actual_source_topology_hash=contract.manifest.physical_topology_hash,
-            capabilities=contract.device_capabilities,
-            runtime_context=context,
-            deployment_manifest=contract.manifest,
+    progress["begun"] = True
+    if reassert:
+        if not execution.run.transition(f"experiment:{ARMS_PROCEDURE}:reassert"):
+            execution.stop("persistence:sp2_acquisition_reassert_not_announced")
+            return
+        reassert_plan = sp2_acquisition_reassert_plan(
+            contract.configuration_plan, device_names=reassert
         )
-    interventions.update(_reassert_outcomes(reassert_result, reassert_plan))
-    progress["in_flight"] = ()
-    facts["reassert"] = {
-        "plan_id": reassert_plan.id,
-        **application_rows(reassert_result),
-    }
-    if any(value.startswith("outcome_unknown") for value in interventions.values()):
-        execution.conclude(
-            ARMS_ID,
-            Assessment(
-                MeasurementConclusion.INCONCLUSIVE,
-                facts={**facts, "interventions": dict(interventions)},
-                causes=["sp2_acquisition_reassert_outcome_unknown"],
-                outcome_unknown=True,
-            ),
-        )
-        return
+        progress.update(begun=True, in_flight=tuple(reassert))
+        with execution.ledger.effect_of("sp2:acquisition:reassert"):
+            reassert_result = ConfigurationApplicator(
+                held.runtimes.configuration
+            ).apply(
+                reassert_plan,
+                actual_source_topology_hash=contract.manifest.physical_topology_hash,
+                capabilities=contract.device_capabilities,
+                runtime_context=context,
+                deployment_manifest=contract.manifest,
+            )
+        interventions.update(_reassert_outcomes(reassert_result, reassert_plan))
+        progress["in_flight"] = ()
+        facts["reassert"] = {
+            "plan_id": reassert_plan.id,
+            **application_rows(reassert_result),
+        }
+        if any(value.startswith("outcome_unknown") for value in interventions.values()):
+            execution.conclude(
+                ARMS_ID,
+                Assessment(
+                    MeasurementConclusion.INCONCLUSIVE,
+                    facts={**facts, "interventions": dict(interventions)},
+                    causes=["sp2_acquisition_reassert_outcome_unknown"],
+                    outcome_unknown=True,
+                ),
+            )
+            return
     facts["explicit_start"] = {}
-    capabilities = _explicit_start_capabilities(contract.service_capabilities)
+    capabilities = _explicit_start_capabilities(
+        contract.service_capabilities, profile_id=execution.definition.profile_id
+    )
     unknown_seen = False
     for index, name in enumerate(start, start=1):
         # One client per application, so an unknown outcome is decided
@@ -1354,11 +1377,20 @@ def _arms_effects_and_window(
         ):
             execution.stop("persistence:sp2_acquisition_start_not_announced")
             return
+        if held.cohort is not None and not _eligible_before_effect(
+            execution, run, held, name, arms, interventions, facts
+        ):
+            if execution.stopped:
+                return
+            continue
         start_plan = sp2_acquisition_start_plan(
             contract.service_plan,
             contract.configuration_plan,
             device_names=[name],
             nonce=f"{execution.nonce}:sp2-acquisition:{index}",
+            required_address_state="link_local"
+            if held.cohort is not None
+            else "dhcp_mode",
         )
         server_ids = {
             item.id
@@ -1370,6 +1402,7 @@ def _arms_effects_and_window(
             for item in product.service_result.action_results
             if item.action_id in server_ids
         ]
+        effect_started = execution.ledger.elapsed()
         progress["in_flight"] = (name,)
         with execution.ledger.effect_of(f"sp2:acquisition:explicit-start:{name}"):
             start_result = ServiceApplicator(held.runtimes.services).apply(
@@ -1387,6 +1420,8 @@ def _arms_effects_and_window(
             )
         facts["explicit_start"][name] = {
             "plan_id": start_plan.id,
+            "started_seconds": effect_started,
+            "finished_seconds": execution.ledger.elapsed(),
             **application_rows(start_result),
         }
         action_id = next(
@@ -1396,6 +1431,14 @@ def _arms_effects_and_window(
         )
         interventions[name] = acquisition_request_outcome(start_result, action_id)
         progress["in_flight"] = ()
+        if (
+            held.cohort is not None
+            and interventions[name].startswith("not_dispatched:")
+            and "dhcp_client_not_link_local" in interventions[name]
+        ):
+            _eligible_before_effect(
+                execution, run, held, name, arms, interventions, facts
+            )
         if interventions[name] == INTERVENTION_DISPATCHED:
             execution.record.releases.append(
                 ReleaseRecord(
@@ -1427,11 +1470,22 @@ def _arms_effects_and_window(
         )
         return
     samples = _window(execution, run, progress)
-    assessment = assess_acquisition_arms(
-        arms,
-        {name: run.client_pools[name] for name in arms},
-        interventions,
-        samples,
+    assessment = (
+        assess_eligible_arms(
+            arms,
+            run.client_pools,
+            interventions,
+            samples,
+            progress.get("servers", ()),
+            expected_samples=SP2_ACQUISITION_SAMPLES,
+        )
+        if held.cohort is not None
+        else assess_acquisition_arms(
+            arms,
+            {name: run.client_pools[name] for name in arms},
+            interventions,
+            samples,
+        )
     )
     execution.conclude(
         ARMS_ID,
@@ -1447,7 +1501,11 @@ def _arms_effects_and_window(
             },
             limitations=[
                 *assessment.limitations,
-                "reassertion_setter_errors_are_not_observable_in_ordinary_batch",
+                *(
+                    ["reassertion_setter_errors_are_not_observable_in_ordinary_batch"]
+                    if held.cohort is None
+                    else ["activation_age_not_fully_observed"]
+                ),
             ],
         ),
     )
@@ -1471,6 +1529,8 @@ def _window(
     returns, so a refusal midway through the window keeps every completed
     sample and every completed read of the interrupted one.
     """
+    if _eligible_profile(execution):
+        return _eligible_window(execution, run, progress)
     clients = run.clients
     sleep = execution.run.boundaries.sleep
     samples: list[AcquisitionSample] = []
@@ -1532,5 +1592,200 @@ def _window(
         if execution.stopped or (index > 1 and waited < SP2_ACQUISITION_WAIT_SECONDS):
             # A truncated wait means the allowance is spent; the window is
             # recorded as it stands and its shortness is visible.
+            break
+    return samples
+
+
+def _eligible_profile(execution: Execution) -> bool:
+    return execution.definition.stage is QualificationStage.SP2_ELIGIBLE_ACQUISITION
+
+
+def _cohort_facts(cohort: EligibleCohort) -> dict[str, Any]:
+    return {
+        "eligible": list(cohort.eligible),
+        "observations": dict(cohort.observations),
+        "causes": list(cohort.causes),
+        "assignment": dict(SP2_ELIGIBLE_ACQUISITION_ARMS),
+    }
+
+
+def _eligible_census(
+    execution: Execution, run: _MixedRun, index: int, frames: list[dict[str, Any]]
+) -> tuple[AcquisitionSample, object]:
+    """Read each shared dependency once and retain real read clock boundaries."""
+    frame: dict[str, Any] = {
+        "index": index,
+        "started_seconds": execution.ledger.elapsed(),
+        "reads": {},
+    }
+    frames.append(frame)
+    calls = (
+        (
+            "clients",
+            lambda: execution.probes.read_dhcp_clients(
+                tuple((name, "FastEthernet0") for name in run.clients)
+            ),
+        ),
+        ("bindings", lambda: execution.probes.read_client_bindings(run.clients)),
+        (
+            "server",
+            lambda: execution.probes.read_dhcp_server_policy(
+                SP2_MIXED_SERVER, "FastEthernet0"
+            ),
+        ),
+        (
+            "leases",
+            lambda: execution.probes.read_dhcp_lease_calibration(
+                SP2_MIXED_SERVER,
+                "FastEthernet0",
+                tuple((name, run.windows.get(name, 1)) for name in run.pools),
+            ),
+        ),
+    )
+    readings = {}
+    try:
+        for name, read in calls:
+            entry = {
+                "started_seconds": execution.ledger.elapsed(),
+                "cause": "interrupted",
+            }
+            frame["reads"][name] = entry
+            try:
+                with execution.ledger.purpose_of(f"sp2:eligible:census:{index}:{name}"):
+                    reading = read()
+                readings[name] = reading
+                entry.update(_read_facts(reading))
+            finally:
+                entry["finished_seconds"] = execution.ledger.elapsed()
+    finally:
+        frame["finished_seconds"] = execution.ledger.elapsed()
+    clients, bindings, server, leases = (
+        readings[name] for name in ("clients", "bindings", "server", "leases")
+    )
+    return AcquisitionSample(
+        index=index,
+        readings=client_readings(clients.payload, run.clients)
+        if clients.observed and isinstance(clients.payload, Mapping)
+        else {},
+        bindings=bindings.payload.get("clients")
+        if bindings.observed and isinstance(bindings.payload, Mapping)
+        else None,
+        scans=scans_by_pool(leases.payload, run.pools)
+        if leases.observed and isinstance(leases.payload, Mapping)
+        else unobserved_scans(run.pools, leases.cause),
+        read_causes=tuple(
+            f"{name}:{reading.cause}"
+            for name, reading in readings.items()
+            if not reading.observed
+        ),
+    ), server.payload if server.observed else None
+
+
+def _eligible_precondition_assessment(
+    execution: Execution, run: _MixedRun, held: _Held, mixed: Assessment
+) -> Assessment:
+    """Keep the product aggregate separate from prospective cohort admission."""
+    assert held.product is not None
+    frames: list[dict[str, Any]] = []
+    sample, server = _eligible_census(execution, run, 0, frames)
+    held.readings = dict(sample.readings)
+    held.cohort = eligible_cohort(
+        SP2_ELIGIBLE_ACQUISITION_ARMS, run.client_pools, sample, server
+    )
+    causes = list(held.cohort.causes)
+    effects = _product_effects_known(held.product)
+    if effects:
+        causes.append(effects)
+    if (
+        held.product.refused
+        or not held.product.record_path
+        or held.product.persist_error
+    ):
+        causes.append("sp2_acquisition_product_not_run_or_not_persisted")
+    return Assessment(
+        MeasurementConclusion.SUPPORTED_IN_SAMPLE
+        if held.cohort.holds and not causes
+        else MeasurementConclusion.INCONCLUSIVE,
+        facts={
+            **mixed.facts,
+            "product_accepted": mixed.conclusion
+            is MeasurementConclusion.SUPPORTED_IN_SAMPLE,
+            "product_assessment_causes": list(mixed.causes),
+            "cohort": _cohort_facts(held.cohort),
+            "eligibility_census": frames,
+        },
+        causes=causes,
+        limitations=[
+            "eligibility_not_product_acceptance",
+            "activation_age_not_fully_observed",
+            *mixed.limitations,
+        ],
+        outcome_unknown=bool(effects),
+    )
+
+
+def _eligible_before_effect(
+    execution: Execution,
+    run: _MixedRun,
+    held: _Held,
+    name: str,
+    arms: Mapping[str, str],
+    interventions: dict[str, str],
+    facts: dict[str, Any],
+) -> bool:
+    """Remove eligibility after passive acquisition; never alter the fixed arms."""
+    frames = facts.setdefault("pre_effect_censuses", [])
+    sample, server = _eligible_census(execution, run, len(frames) + 1, frames)
+    cohort = eligible_cohort(
+        SP2_ELIGIBLE_ACQUISITION_ARMS,
+        run.client_pools,
+        sample,
+        server,
+        require_comparisons=False,
+    )
+    frames[-1]["target"] = name
+    frames[-1]["cohort"] = _cohort_facts(cohort)
+    if cohort.causes:
+        execution.stop("sp2_eligible_shared_precondition_changed")
+        return False
+    if name not in cohort.eligible:
+        interventions[name] = (
+            "observed_before_intervention"
+            if cohort.observations[name] == "assigned_observer"
+            else "not_dispatched:eligibility_lost"
+        )
+        return False
+    pool = run.client_pools[name].effective_pool_name
+    controls = [
+        client
+        for client, arm in arms.items()
+        if arm == "control" and run.client_pools[client].effective_pool_name == pool
+    ]
+    if not controls or any(client not in cohort.eligible for client in controls):
+        interventions[name] = "not_dispatched:control_eligibility_lost"
+        return False
+    return True
+
+
+def _eligible_window(
+    execution: Execution, run: _MixedRun, progress: dict[str, Any]
+) -> list[AcquisitionSample]:
+    """Observe all subjects, server policy and pools for the declared exposure."""
+    samples = []
+    frames = progress.setdefault("window", [])
+    servers = progress.setdefault("servers", [])
+    for index in range(1, SP2_ACQUISITION_SAMPLES + 1):
+        waited = (
+            execution.ledger.wait(
+                SP2_ACQUISITION_WAIT_SECONDS, execution.run.boundaries.sleep
+            )
+            if index > 1
+            else 0.0
+        )
+        sample, server = _eligible_census(execution, run, index, frames)
+        frames[-1]["wait_seconds"] = waited
+        samples.append(replace(sample, wait_seconds=waited))
+        servers.append(server)
+        if execution.stopped or (index > 1 and waited < SP2_ACQUISITION_WAIT_SECONDS):
             break
     return samples

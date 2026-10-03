@@ -118,6 +118,8 @@ def compose_service_session(
         if bounds.wait_allowance is not None:
             configuration_bounds["wait_allowance"] = bounds.wait_allowance
         service_bounds = dict(timing)
+        if bounds.wait_allowance is not None:
+            service_bounds["wait_allowance"] = bounds.wait_allowance
         if bounds.owned_release is not None:
             service_bounds["owned_release"] = bounds.owned_release
 

@@ -108,6 +108,7 @@ class QualificationStage(StrEnum):
     #: The mixed product again, then one typed acquisition intervention per
     #: arm client on the state it leaves: a discriminator, never acceptance.
     SP2_MIXED_ACQUISITION = "SP2-MIXED-ACQUISITION"
+    SP2_ELIGIBLE_ACQUISITION = "SP2-ELIGIBLE-ACQUISITION"
 
 
 class ExecutionMode(StrEnum):
@@ -467,6 +468,7 @@ STAGE_CEILINGS: dict[QualificationStage, tuple[int, int]] = {
     QualificationStage.SP2_MIXED_PRODUCT: (3200, 3600),
     QualificationStage.SP2_CAPACITY_PRODUCT: (6000, 10800),
     QualificationStage.SP2_MIXED_ACQUISITION: (3400, 4200),
+    QualificationStage.SP2_ELIGIBLE_ACQUISITION: (3400, 4200),
 }
 
 Q0_PC = "__MCP_E6Q_PC1"
@@ -1638,6 +1640,7 @@ SP2_STAGES = (
     QualificationStage.SP2_MIXED_PRODUCT,
     QualificationStage.SP2_CAPACITY_PRODUCT,
     QualificationStage.SP2_MIXED_ACQUISITION,
+    QualificationStage.SP2_ELIGIBLE_ACQUISITION,
 )
 
 
@@ -2775,6 +2778,11 @@ SP2_ACQUISITION_ARMS: dict[str, str] = {
     "BR2-DEFAULT-PC-02": "control",
     "BR2-DEFAULT-PC-03": "control",
 }
+#: Prospective v2 assignment is fixed before eligibility or outcomes.
+SP2_ELIGIBLE_ACQUISITION_ARMS: dict[str, str] = {
+    name: "explicit_start" if arm == "explicit_start" else "control"
+    for name, arm in SP2_ACQUISITION_ARMS.items()
+}
 #: Samples and waits of the one shared post-intervention window, the stock
 #: acquisition cadence of the product's groups.
 SP2_ACQUISITION_SAMPLES = 13
@@ -3575,6 +3583,32 @@ def _sp2_mixed_acquisition() -> StageDefinition:
 SP1_ROUTED_STAGES = (QualificationStage.SP1_ROUTED_W1, QualificationStage.SP1_ROUTED_W2)
 
 
+def _sp2_eligible_acquisition() -> StageDefinition:
+    """Observe the mixed product, then compare only freshly eligible subjects."""
+    original = _sp2_mixed_acquisition()
+    product, arms, terminal = original.experiments
+    return replace(
+        original,
+        stage=QualificationStage.SP2_ELIGIBLE_ACQUISITION,
+        profile_id="SP2-ELIGIBLE-ACQUISITION",
+        profile_version="2",
+        purpose="Compare one explicit start with untouched eligible controls; retain assigned observers.",
+        experiments=(
+            replace(
+                product,
+                hypothesis="The mixed product leaves eligible APIPA clients beside any assigned observers.",
+                capabilities=("sp2.eligible_acquisition_cohort",),
+            ),
+            replace(
+                arms,
+                hypothesis="An eligible client acquires after one typed explicit start while same-pool controls remain unassigned.",
+                capabilities=("sp2.client_dhcp_explicit_start",),
+            ),
+            terminal,
+        ),
+    )
+
+
 STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.Q0: _q0(),
     QualificationStage.Q1: _q1(),
@@ -3606,6 +3640,7 @@ STAGE_DEFINITIONS: dict[QualificationStage, StageDefinition] = {
     QualificationStage.SP2_MIXED_PRODUCT: _sp2_mixed_product(),
     QualificationStage.SP2_CAPACITY_PRODUCT: _sp2_mixed_product(capacity=True),
     QualificationStage.SP2_MIXED_ACQUISITION: _sp2_mixed_acquisition(),
+    QualificationStage.SP2_ELIGIBLE_ACQUISITION: _sp2_eligible_acquisition(),
 }
 
 
