@@ -2601,3 +2601,30 @@ subject is re-read and reclassified as an observer; uncertainty remains stopped.
 Test actual generated scripts for assigned, APIPA and unreadable states and
 unchanged ordinary acquisition. This is a typed effect prerequisite, not a new
 public input, transport, dispatcher or native retry claim.
+### Continuation verification and originating test correction
+
+Candidate `f4496f24bee4ef3b322f0d7c8edf93c1b4f37970`, tree
+`4440c1cc13418a2f6254d417d7ce09f7e92f077c`, passed 220 focused cases, the
+provisional quality/docs/namespace/whitespace checks and its clean exact-delivery
+gate. Actual offline SP2 loads constructed 2/21/201/997 clients; the largest
+used ten group scans, 6,020 dispatches, 3,559,991 response bytes, 24,607,650 record
+bytes, 54.70 seconds and 184.3 MiB peak. These are substituted product components,
+not native capacity. The complete local run returned 8,892 passed, six skipped,
+three existing warnings and one failed architecture inventory case in 1,578.62
+seconds. The initial failure and source identity remain retained.
+
+The failure was reproduced alone before correction: the explicit named-successor
+handler test omitted `SP2-ELIGIBLE-ACQUISITION`. Add its expected existing mixed
+acquisition handler to that table; preserve the exact set and object-identity
+assertions and the immutable starting-handler table. All 36 architecture tests
+then passed. This is an originating test-design update for the new registered
+profile; production Python bytes are unchanged. A fresh complete green run and
+exact-source CI remain required before LIVE. No native episode was allocated.
+
+Independent helper review closed an eligible-outcome omission and a v2 archive
+label defect. The prospective README now separates the measurement conclusion
+from the original product record status and prints the actual profile version.
+Its exact reviewed helper snapshot is
+`f74d300c8a21d04987ff72385853ae3e1238173409ab877f03d954fb019afed4`.
+The old snapshots, findings and negative checks are retained separately. Scope is
+exact helper bytes, not source delivery, LIVE admission or phase acceptance.

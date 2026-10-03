@@ -221,6 +221,10 @@ SUCCESSOR_HANDLERS = {
         "workflows.sp2_mixed_product",
         "run_sp2_mixed_acquisition",
     ),
+    QualificationStage.SP2_ELIGIBLE_ACQUISITION: (
+        "workflows.sp2_mixed_product",
+        "run_sp2_mixed_acquisition",
+    ),
 }
 
 
