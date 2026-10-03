@@ -1,0 +1,23 @@
+Delivery validation: clean tree at exact commit 40d6cfc46f23a44c9e087c484664808324fe8436.
+Comparison base: cisco/main -> 6263344e31ba3b0de6539d652f2cd06fc73a3562
+Merge base: 6263344e31ba3b0de6539d652f2cd06fc73a3562
+Changed Python files: 332
+Mechanical-only exempt: 0
+Immutable evidence exempt: 2
+Immutable evidence: docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/lead/launch_owned_lab.py
+Immutable evidence: docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/lead/run_qualification.py
+Ruff-gated Python files: 330
+All checks passed!
+All checks passed!
+All checks passed!
+All checks passed!
+All checks passed!
+All checks passed!
+All checks passed!
+45 files already formatted
+46 files already formatted
+45 files already formatted
+54 files already formatted
+56 files already formatted
+57 files already formatted
+27 files already formatted

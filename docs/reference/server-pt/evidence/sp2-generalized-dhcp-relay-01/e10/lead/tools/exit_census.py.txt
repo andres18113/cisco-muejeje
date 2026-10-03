@@ -1,0 +1,55 @@
+"""Read-only final census: Packet Tracer processes, mailbox and campaign lock."""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
+
+from authority import (
+    prepared_plan,
+    verify_tools,
+)
+
+from packet_tracer_mcp.infrastructure.execution.file_bridge import bridge_dir
+from packet_tracer_mcp.infrastructure.execution.server_pt_process_control import (
+    PowerShellOwnedProcessControl,
+)
+
+EVIDENCE = Path(sys.argv[1]).resolve()
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+if not EVIDENCE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+verify_tools(EVIDENCE, Path(__file__))
+ids = json.loads((EVIDENCE / "ids.json").read_text(encoding="utf-8"))
+prepared_plan(EVIDENCE, ids)
+name = sys.argv[2]
+if name not in {"11-exit-census.json", "11b-exit-census.json", "11c-exit-census.json"}:
+    raise RuntimeError("exit_census_name_invalid")
+box = bridge_dir()
+census = PowerShellOwnedProcessControl().packet_tracer_processes()
+value = {
+    "schema_version": 1,
+    "episode": ids["episode"],
+    "attempt_id": ids["attempt_id"],
+    "stage": ids["stage"],
+    "observed_at_utc": datetime.now(UTC).isoformat(),
+    "processes": [asdict(item) for item in census.processes],
+    "process_error": census.error,
+    "mailbox_files": sorted(
+        item.name
+        for item in box.iterdir()
+        if item.is_file() and item.name != "alive.txt"
+    )
+    if box.exists()
+    else [],
+    "campaign_lock_present": (box / "campaign" / "campaign.lock").exists(),
+}
+with (EVIDENCE / name).open("x", encoding="utf-8") as stream:
+    json.dump(value, stream, sort_keys=True, indent=2)
+    stream.write("\n")
+print(json.dumps(value, sort_keys=True))

@@ -1,0 +1,675 @@
+"""Fail-closed local gates shared by prospective SP2 episode helpers.
+
+These checks observe retained bytes only. They allocate nothing and contact no
+Packet Tracer process. The caller pins the independently reviewed snapshot hash.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.application.use_cases.server_pt_process_evidence import (
+    exit_evidence_findings,
+    incarnation_ticks,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    SP2_ACQUISITION_ARMS,
+    SP2_ELIGIBLE_ACQUISITION_ARMS,
+    stage_definition,
+)
+from packet_tracer_mcp.shared.utils import resolve_within
+
+#: The registered private stages these helpers may prepare and seal, with
+#: the measurement prefix of each one's product and terminal records.
+MEASUREMENT_PREFIX = {
+    "SP2-MIXED-PRODUCT": "M-SP2-MIXED",
+    "SP2-CAPACITY-PRODUCT": "M-SP2-CAPACITY",
+    "SP2-MIXED-ACQUISITION": "M-SP2-ACQUISITION",
+    "SP2-ELIGIBLE-ACQUISITION": "M-SP2-ACQUISITION",
+}
+#: The exact verification artifacts a prepared episode must retain: the
+#: complete suite, the affected run, the scale gates, the clean delivery
+#: gate, docs, namespace and whitespace, each with its exit code.
+VERIFICATION_ARTIFACTS = frozenset(
+    {
+        "full.log",
+        "full.xml",
+        "full.exit",
+        "affected.log",
+        "affected.xml",
+        "affected.exit",
+        "scale.log",
+        "scale.exit",
+        "delivery.log",
+        "delivery.exit",
+        "docs.log",
+        "docs.exit",
+        "namespace.log",
+        "namespace.exit",
+        "whitespace.log",
+        "whitespace.exit",
+    }
+)
+
+TOOLS = frozenset(
+    {
+        "authority.py",
+        "close_episode.py",
+        "exit_census.py",
+        "launch_owned_lab.py",
+        "make_episode.py",
+        "open_episode.py",
+        "preopen.py",
+        "publish_seal.py",
+        "retire_owned_lab.py",
+        "run_qualification.py",
+        "seal_episode.py",
+    }
+)
+
+
+def digest(path: Path) -> str:
+    """Hash a regular retained file without following a reparse point."""
+    regular(path)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def regular(path: Path) -> None:
+    """Reject missing files, links, junctions and linked parent directories."""
+    for candidate in (path, *path.parents):
+        if candidate.is_symlink() or (
+            getattr(candidate.lstat(), "st_file_attributes", 0) & 1024
+        ):
+            raise RuntimeError("retained_path_is_reparse_point")
+    if not path.is_file():
+        raise RuntimeError("required_retained_file_missing")
+
+
+def load(path: Path) -> dict:
+    """Read one required JSON object from a regular retained file."""
+    regular(path)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("retained_json_not_object")
+    return value
+
+
+def last_json(path: Path) -> dict:
+    """Read the final nonempty stdout line as one required JSON object."""
+    regular(path)
+    rows = path.read_text(encoding="utf-8").splitlines()
+    value = json.loads(rows[-1]) if rows else None
+    if not isinstance(value, dict):
+        raise RuntimeError("retained_stdout_summary_missing")
+    return value
+
+
+def verify_tools(lead: Path, executed: Path) -> str:
+    """Require the caller-pinned exact reviewed tool set in exclusive lead/tools."""
+    if not sys.dont_write_bytecode:
+        raise RuntimeError("invoke_helpers_with_python_B")
+    manifest = lead / "helper-snapshot.json"
+    pinned = os.environ.get("PT_MCP_HELPER_SNAPSHOT_SHA256", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", pinned) or digest(manifest) != pinned:
+        raise RuntimeError("reviewed_helper_snapshot_not_pinned")
+    snapshot = load(manifest)
+    hashes = snapshot.get("tools_sha256")
+    tools = lead / "tools"
+    if (
+        snapshot.get("schema_version") != 1
+        or not isinstance(hashes, dict)
+        or set(hashes) != TOOLS
+        or executed.resolve().parent != tools.resolve()
+        or executed.name not in TOOLS
+    ):
+        raise RuntimeError("executed_helper_outside_reviewed_snapshot")
+    actual = {p.relative_to(tools).as_posix() for p in tools.rglob("*") if p.is_file()}
+    if actual != TOOLS:
+        raise RuntimeError("reviewed_helper_file_set_changed")
+    for name, expected in hashes.items():
+        if not isinstance(expected, str) or digest(tools / name) != expected:
+            raise RuntimeError("reviewed_helper_bytes_changed")
+    return pinned
+
+
+def verify_verification(lead: Path, head: str, tree: str, expected: str = "") -> dict:
+    """Require the retained verification summary and its exact named artifacts."""
+    folder = lead / "source-verification"
+    path = folder / "verification-summary.json"
+    if expected and digest(path) != expected:
+        raise RuntimeError("verification_summary_bytes_changed")
+    summary = load(path)
+    hashes = summary.get("artifact_sha256")
+    if (
+        summary.get("head") != head
+        or summary.get("tree") != tree
+        or summary.get("delivery_clean_exact") is not True
+        or not summary.get("source_python_sha256")
+        or not isinstance(hashes, dict)
+        or set(hashes) != VERIFICATION_ARTIFACTS
+    ):
+        raise RuntimeError("retained_verification_incomplete_or_foreign")
+    actual = {
+        p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()
+    }
+    if actual != {*hashes, "verification-summary.json"}:
+        raise RuntimeError("retained_verification_file_set_changed")
+    for name, expected_hash in hashes.items():
+        if (
+            Path(name).name != name
+            or digest(resolve_within(folder, name)) != expected_hash
+        ):
+            raise RuntimeError("retained_verification_artifact_changed")
+    return summary
+
+
+def prepared_plan(lead: Path, ids: dict) -> dict:
+    """Bind explicit prepared identity and exact registered scope and allocation."""
+    definition = stage_definition(ids.get("stage", ""))
+    if (
+        definition is None
+        or ids.get("stage") not in MEASUREMENT_PREFIX
+        or type(ids.get("episode")) is not int
+        or ids["episode"] < 1
+        or not re.fullmatch(r"[0-9a-f]{32}", ids.get("attempt_id", ""))
+        or not re.fullmatch(r"[0-9a-f]{32}", ids.get("instance_token", ""))
+        or ids["instance_token"] == ids["attempt_id"]
+        or not re.fullmatch(r"[0-9a-f]{40}", ids.get("head", ""))
+        or not re.fullmatch(r"[0-9a-f]{40}", ids.get("tree", ""))
+        or ids.get("authorization_id")
+        != ("SERVER-PT-SP2-E" + str(ids["episode"]) + "-" + ids["attempt_id"])
+        or (ids.get("profile_id"), ids.get("profile_version"))
+        != (definition.profile_id, definition.profile_version)
+        or ids.get("channel") != "file"
+        or ids.get("build") != "9.0.1.0858"
+    ):
+        raise RuntimeError("prepared_episode_identity_invalid")
+    plan = load(lead / "episode-plan.json")
+    if plan.get("helper_snapshot_sha256") != digest(
+        lead / "helper-snapshot.json"
+    ) or not re.fullmatch(r"[0-9a-f]{64}", plan.get("verification_summary_sha256", "")):
+        raise RuntimeError("prepared_provenance_snapshot_missing_or_changed")
+    required = {
+        "episode": ids["episode"],
+        "campaign_id": SP2_CAMPAIGN.campaign_id,
+        "authorization_id": ids["authorization_id"],
+        "source_sha": ids["head"],
+        "source_tree": ids["tree"],
+        "attempt_ids": [ids["attempt_id"]],
+        "instance_token": ids["instance_token"],
+        "stage": ids["stage"],
+        "profile_id": ids["profile_id"],
+        "profile_version": ids["profile_version"],
+        "channel": ids["channel"],
+        "build": ids["build"],
+        "targets": list(definition.fixture_names),
+        "selected_clients": list(definition.selected_clients),
+        "allocated_operations": definition.budget.max_operations + 10,
+        "allocated_seconds": definition.budget.max_seconds + 600,
+    }
+    # The discriminator's arm assignment is part of what was prepared and
+    # opened; no other stage may carry one.
+    if ids["stage"] in {"SP2-MIXED-ACQUISITION", "SP2-ELIGIBLE-ACQUISITION"}:
+        eligible = ids["stage"] == "SP2-ELIGIBLE-ACQUISITION"
+        arms = SP2_ELIGIBLE_ACQUISITION_ARMS if eligible else SP2_ACQUISITION_ARMS
+        required["acquisition_arms"] = dict(sorted(arms.items()))
+        if eligible:
+            required["required_address_state"] = "link_local"
+    elif "acquisition_arms" in plan:
+        raise RuntimeError("prepared_plan_carries_foreign_arms")
+    if any(plan.get(key) != value for key, value in required.items()):
+        raise RuntimeError("prepared_plan_identity_or_limits_differ")
+    if any(
+        type(plan.get(k)) is not int
+        for k in ("episode", "allocated_operations", "allocated_seconds")
+    ):
+        raise RuntimeError("prepared_plan_limits_not_typed")
+    verify_verification(
+        lead, ids["head"], ids["tree"], plan.get("verification_summary_sha256", "")
+    )
+    return plan
+
+
+def require_opening(
+    root: Path, lead: Path, ids: dict, store, *, closed: bool = False
+) -> dict:
+    """Require exit-zero receipt and exact indexed opening before lifecycle effects."""
+    plan = prepared_plan(lead, ids)
+    if (lead / "00-open-episode.exit").read_text().strip() != "0":
+        raise RuntimeError("episode_open_receipt_not_exit_zero")
+    receipt = last_json(lead / "00-open-episode.stdout")
+    path = resolve_within(
+        root,
+        "data",
+        "commissioning",
+        SP2_CAMPAIGN.campaign_id,
+        "ledger",
+        f"episode-{ids['episode']:04d}-opening.json",
+    )
+    if (
+        receipt.get("outcome") != "recorded"
+        or receipt.get("record_path") != str(path)
+        or receipt.get("record_sha256") != digest(path)
+        or type(receipt.get("ledger", {}).get("open_episode")) is not int
+        or receipt.get("ledger", {}).get("open_episode") != ids["episode"]
+        or store.verify_index()
+    ):
+        raise RuntimeError("episode_open_receipt_or_index_unverified")
+    ledger = store.ledger_records()
+    key = f"episode-{ids['episode']:04d}-opening"
+    opening = load(path)
+    if (
+        ledger.get(key) != opening
+        or opening.get("kind") != "episode_opening"
+        or any(
+            type(opening.get(key)) is not int
+            for key in ("episode", "allocated_operations", "allocated_seconds")
+        )
+        or opening.get("charter_sha256") != SP2_CAMPAIGN.charter_sha256
+        or any(opening.get(key) != value for key, value in plan.items())
+        or (not closed and f"episode-{ids['episode']:04d}-closing" in ledger)
+    ):
+        raise RuntimeError("indexed_episode_opening_differs_from_preparation")
+    return opening
+
+
+def require_census(path: Path, ids: dict) -> dict:
+    """Require complete typed census and exact episode, attempt and stage."""
+    value = load(path)
+    if (
+        type(value.get("schema_version")) is not int
+        or value["schema_version"] != 1
+        or type(value.get("episode")) is not int
+        or value["episode"] != ids["episode"]
+        or value.get("attempt_id") != ids["attempt_id"]
+        or value.get("stage") != ids["stage"]
+        or type(value.get("process_error")) is not str
+        or type(value.get("processes")) is not list
+        or type(value.get("mailbox_files")) is not list
+        or type(value.get("campaign_lock_present")) is not bool
+        or not all(type(item) is str for item in value["mailbox_files"])
+    ):
+        raise RuntimeError("cleanup_census_incomplete_or_foreign")
+    try:
+        observed = datetime.fromisoformat(value["observed_at_utc"])
+        if observed.tzinfo is None:
+            raise ValueError("census timestamp lacks timezone")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("cleanup_census_time_unobservable") from exc
+    for row in value["processes"]:
+        if not isinstance(row, dict) or any(
+            type(row.get(k)) is not t
+            for k, t in {
+                "process_id": int,
+                "parent_process_id": int,
+                "start_ticks": int,
+                "executable_path": str,
+                "command_line": str,
+            }.items()
+        ):
+            raise RuntimeError("cleanup_process_census_row_unobservable")
+    return value
+
+
+def launch_capture(lead: Path, ids: dict, store) -> dict:
+    """Bind indexed owned launch to the exact retained successful capture."""
+    success = None
+    for suffix in ("", "b", "c"):
+        path = lead / f"06{suffix}-record-launch.json"
+        if path.exists():
+            row = load(path)
+            if type(row.get("exit_code")) is int and row["exit_code"] == 0:
+                if success is not None:
+                    raise RuntimeError("multiple_successful_launch_receipts")
+                success = row
+    if success is None or success.get("capture_file") not in {
+        "05-launch-capture.json",
+        "05b-launch-capture.json",
+        "05c-launch-capture.json",
+    }:
+        raise RuntimeError("owned_launch_capture_not_recorded")
+    path = lead / success["capture_file"]
+    capture = load(path)
+    launch = store.load_process_launch(ids["attempt_id"])
+    if (
+        launch.get("capture_sha256") != digest(path)
+        or launch.get("capture_text", "").encode("utf-8") != path.read_bytes()
+        or any(
+            launch.get(key) != capture.get(key)
+            for key in (
+                "pid",
+                "process_path",
+                "process_incarnation",
+                "command_line",
+                "created_by_campaign",
+                "workspace_kind",
+                "launch_method",
+            )
+        )
+        or type(capture.get("pid")) is not int
+        or capture["pid"] <= 0
+        or not capture.get("process_path")
+        or incarnation_ticks(capture.get("process_incarnation")) is None
+        or capture.get("created_by_campaign") is not True
+        or capture.get("workspace_kind") != "disposable_declared"
+        or capture.get("launch_method") != "Start-Process"
+        or launch.get("campaign_id") != SP2_CAMPAIGN.campaign_id
+        or launch.get("charter_sha256") != SP2_CAMPAIGN.charter_sha256
+        or launch.get("source_sha") != ids["head"]
+        or launch.get("source_tree") != ids["tree"]
+    ):
+        raise RuntimeError("owned_launch_capture_identity_differs")
+    return launch
+
+
+def cleanup_assessment(
+    root: Path, lead: Path, ids: dict, store, census_path: Path
+) -> tuple[bool, str, str]:
+    """Keep process absence, attributed exit and clean/dirty disposition separate."""
+    census = require_census(census_path, ids)
+    absent = not (
+        census["process_error"]
+        or census["processes"]
+        or census["mailbox_files"]
+        or census["campaign_lock_present"]
+    )
+    try:
+        exit_record = store.load_process_exit(ids["attempt_id"])
+    except (OSError, ValueError):
+        exit_record = None
+    if exit_record is None:
+        return (
+            False,
+            "process_absent_exit_unattributed" if absent else "residue_or_unobservable",
+            "",
+        )
+    launch = launch_capture(lead, ids, store)
+    disposition = exit_record.get("disposition")
+    if (
+        disposition
+        not in {
+            "exited",
+            "exited_forced",
+            "exited_dirty",
+            "exited_dirty_forced",
+            "exited_before_setup",
+            "exited_before_setup_forced",
+        }
+        or any(
+            exit_record.get(k) != launch.get(k)
+            for k in (
+                "campaign_id",
+                "charter_sha256",
+                "source_sha",
+                "source_tree",
+                "pid",
+                "process_path",
+                "process_incarnation",
+            )
+        )
+        or type(exit_record.get("process_count")) is not int
+        or type(exit_record.get("pid")) is not int
+        or exit_evidence_findings(
+            launch,
+            exit_record,
+            process_count=exit_record.get("process_count"),
+            allow_forced=True,
+        )
+        or exit_record.get("mailbox_after_exit", {}).get("error") != ""
+        or type(exit_record.get("mailbox_after_exit", {}).get("pending_count"))
+        is not int
+        or exit_record["mailbox_after_exit"]["pending_count"] != 0
+    ):
+        raise RuntimeError("owned_exit_evidence_unverified")
+    clean = absent and disposition in {"exited", "exited_forced"}
+    label = (
+        "verified_clean"
+        if clean
+        else "process_exited_dirty"
+        if absent
+        else "residue_or_unobservable"
+    )
+    return clean, label, str(disposition)
+
+
+def required_evidence(
+    root: Path, lead: Path, ids: dict, plan: dict, store
+) -> tuple[dict, Path, dict, dict, dict, Path | None]:
+    """Validate qualification and every promised product byte before seal staging."""
+    summary = last_json(lead / "09-qualification.stdout")
+    campaign = summary.get("campaign", {})
+    if any(
+        summary.get(k) != v
+        for k, v in {
+            "stage": ids["stage"],
+            "executed_sha": ids["head"],
+            "channel": ids["channel"],
+            "observed_build": ids["build"],
+            "execution_mode": "live",
+        }.items()
+    ) or any(
+        campaign.get(k) != v
+        for k, v in {
+            "campaign_id": SP2_CAMPAIGN.campaign_id,
+            "episode": ids["episode"],
+            "attempt_id": ids["attempt_id"],
+        }.items()
+    ):
+        raise RuntimeError("qualification_summary_identity_mismatch")
+    text = summary.get("record_path")
+    if not isinstance(text, str) or not text:
+        raise RuntimeError("promised_qualification_record_missing")
+    path = Path(text)
+    if not path.resolve().is_relative_to(root / "data/services/qualification"):
+        raise RuntimeError("qualification_record_path_outside_governed_root")
+    record = load(path)
+    auth = record.get("authorization", {})
+    definition = stage_definition(ids["stage"])
+    expected_auth = {
+        "authorization_id": ids["authorization_id"],
+        "attempt_id": ids["attempt_id"],
+        "instance_token": ids["instance_token"],
+        "sha": ids["head"],
+        "tree": ids["tree"],
+        "stage": ids["stage"],
+        "profile_id": ids["profile_id"],
+        "profile_version": ids["profile_version"],
+        "channel": ids["channel"],
+        "build": ids["build"],
+        "targets": plan["targets"],
+        "max_operations": definition.budget.max_operations,
+        "max_seconds": definition.budget.max_seconds,
+    }
+    if (
+        not isinstance(record.get("run_id"), str)
+        or not record["run_id"]
+        or summary.get("run_id") != record["run_id"]
+        or record.get("stage") != ids["stage"]
+        or record.get("execution_mode") != "live"
+        or record.get("source", {}).get("executed_sha") != ids["head"]
+        or record.get("source", {}).get("executed_tree") != ids["tree"]
+        or record.get("source", {}).get("clean") is not True
+        or record.get("transport", {}).get("channel") != ids["channel"]
+        or record.get("environment", {}).get("observed_build") != ids["build"]
+        or any(auth.get(k) != v for k, v in expected_auth.items())
+    ):
+        raise RuntimeError("qualification_record_identity_mismatch")
+    launch = launch_capture(lead, ids, store)
+    if (
+        auth.get("process_id") != launch["pid"]
+        or auth.get("process_path") != launch["process_path"]
+    ):
+        raise RuntimeError("qualification_owned_process_differs")
+    _source_reference(root, ids, "qualification-record", path)
+    prefix = MEASUREMENT_PREFIX[ids["stage"]]
+    measurements = record.get("measurements", [])
+    declared = sorted(item.id for item in definition.experiments)
+    if sorted(str(m.get("experiment_id")) for m in measurements) != declared:
+        # Missing, duplicated or foreign measurements are not this stage's
+        # record, whatever else it holds.
+        raise RuntimeError("record_measurement_set_differs_from_stage")
+    if ids["stage"] in {"SP2-MIXED-ACQUISITION", "SP2-ELIGIBLE-ACQUISITION"}:
+        _acquisition_arms_evidence(measurements, plan)
+    selected = []
+    for suffix in ("PRODUCT", "FINAL"):
+        rows = [
+            m for m in measurements if m.get("experiment_id") == prefix + "-" + suffix
+        ]
+        if len(rows) != 1:
+            raise RuntimeError(
+                "required_product_or_final_measurement_missing_or_ambiguous"
+            )
+        selected.append(rows[0])
+    measure, final = selected
+    facts = measure.get("facts", {})
+    product_text = facts.get("product_record_path", "")
+    product_summary = facts.get("product_summary")
+    if not product_text and product_summary is None and measure.get("status") != "ran":
+        return summary, path, record, measure, final, None
+    if (
+        not isinstance(product_text, str)
+        or not product_text
+        or not isinstance(product_summary, dict)
+    ):
+        raise RuntimeError("promised_product_record_or_summary_missing")
+    product_path = Path(product_text)
+    if not product_path.resolve().is_relative_to(
+        root / "data/services/product-qualification"
+    ):
+        raise RuntimeError("product_record_path_outside_governed_root")
+    product = load(product_path)
+    expected_product = {
+        "run_id": record["run_id"] + "-product",
+        "deployment_id": "qualification/" + record["run_id"],
+        "transport": ids["channel"],
+        "packet_tracer_version": ids["build"],
+        "manifest_hash": plan["binding_hashes"]["manifest"],
+        "physical_topology_hash": plan["binding_hashes"]["topology"],
+        "configuration_semantic_hash": plan["binding_hashes"]["e5"],
+    }
+    if (
+        any(product.get(k) != v for k, v in expected_product.items())
+        or product.get("source_tree")
+        != {"sha": ids["head"], "tree": ids["tree"], "dirty": False}
+        or any(
+            product_summary.get(k) != product.get(k)
+            for k in (
+                "run_id",
+                "deployment_id",
+                "transport",
+                "packet_tracer_version",
+                "status",
+                "persisted_stage",
+            )
+        )
+        or product_summary.get("stage") != product.get("persisted_stage")
+        or product_summary.get("record_path") != str(product_path)
+        or facts.get("service_capabilities_sha256")
+        != plan["binding_hashes"]["service_catalog"]
+    ):
+        raise RuntimeError("product_record_summary_or_deployment_identity_differs")
+    _source_reference(root, ids, "product-record", product_path)
+    return summary, path, record, measure, final, product_path
+
+
+#: The outcomes the maintained driver records per arm client. A control is
+#: untouched; an intervened client is dispatched, not dispatched with a
+#: reason or unknown with a reason; only a reassertion can be applied
+#: without a verified mode read-back.
+_UNTOUCHED = "none"
+_INTERVENED = {
+    "reassert": frozenset({"dispatched", "mode_readback_not_verified"}),
+    "explicit_start": frozenset({"dispatched"}),
+}
+_INTERVENED_PREFIXES = ("not_dispatched:", "outcome_unknown:")
+
+
+def _outcome_valid(arm: str, value: object) -> bool:
+    """Whether one recorded outcome is well formed and agrees with its arm."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        return False
+    if arm == "control":
+        return value == _UNTOUCHED
+    if arm not in _INTERVENED:
+        return False
+    return value in _INTERVENED[arm] or any(
+        value.startswith(prefix) and len(value) > len(prefix)
+        for prefix in _INTERVENED_PREFIXES
+    )
+
+
+def _acquisition_arms_evidence(measurements: list, plan: dict) -> None:
+    """Require the discriminator's arms record to name exactly the prepared arms.
+
+    A ran measurement records one intervention outcome per prepared arm
+    client, including untouched controls and starts never reached. A
+    measurement that did not run must say why; silence is not evidence.
+    """
+    [arms] = [
+        m for m in measurements if m.get("experiment_id") == "M-SP2-ACQUISITION-ARMS"
+    ]
+    prepared = plan.get("acquisition_arms")
+    if not isinstance(prepared, dict) or not prepared:
+        raise RuntimeError("prepared_arms_missing")
+    status = arms.get("status")
+    if status == "ran":
+        facts = arms.get("facts", {})
+        interventions = facts.get("interventions")
+        eligible_profile = plan.get("stage") == "SP2-ELIGIBLE-ACQUISITION"
+        expected = set(prepared)
+        if eligible_profile:
+            cohort = facts.get("cohort")
+            if not isinstance(cohort, dict) or cohort.get("assignment") != prepared:
+                raise RuntimeError("eligible_assignment_differs_from_preparation")
+            selected = cohort.get("eligible")
+            observations = cohort.get("observations")
+            if not isinstance(selected, list) or not all(isinstance(name, str) for name in selected) or len(selected) != len(set(selected)) or not set(selected) <= expected:
+                raise RuntimeError("eligible_cohort_not_a_unique_prepared_subset")
+            valid_dispositions = {
+                "eligible", "assigned_observer", "unobserved", "not_evaluated:shared_policy",
+                "ineligible:unobserved", "ineligible:dhcp_mode_not_on", "ineligible:no_address",
+                "ineligible:not_link_local", "ineligible:mac_unusable", "ineligible:link_local",
+            }
+            if not isinstance(observations, dict) or set(observations) != expected or any(not isinstance(value, str) or value not in valid_dispositions for value in observations.values()) or set(selected) != {name for name, value in observations.items() if value == "eligible"}:
+                raise RuntimeError("eligible_observations_not_complete")
+            expected = set(selected)
+        if not isinstance(interventions, dict) or set(interventions) != expected:
+            raise RuntimeError("arms_measurement_clients_differ_from_preparation")
+        if not all(
+            (_outcome_valid(prepared[name], value) or (eligible_profile and prepared[name] == "explicit_start" and value == "observed_before_intervention"))
+            for name, value in interventions.items()
+        ):
+            raise RuntimeError("arms_measurement_outcome_malformed")
+        return
+    reason = arms.get("reason")
+    if status not in {"not_run", "interrupted"} or not (
+        isinstance(reason, str) and reason.strip()
+    ):
+        raise RuntimeError("arms_measurement_absence_unexplained")
+
+
+def _source_reference(root: Path, ids: dict, label: str, path: Path) -> None:
+    """Require the maintained store's exact path/size/hash pointer for one record."""
+    ref = load(
+        resolve_within(
+            root,
+            "data",
+            "commissioning",
+            SP2_CAMPAIGN.campaign_id,
+            ids["attempt_id"],
+            "source-ref-" + label + ".json",
+        )
+    )
+    if ref != {
+        "path": path.relative_to(root).as_posix(),
+        "sha256": digest(path),
+        "bytes": path.stat().st_size,
+    }:
+        raise RuntimeError("promised_record_indexed_pointer_differs")

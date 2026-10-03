@@ -1,0 +1,23 @@
+{
+  "changed_from_predecessor": [
+    "authority.py",
+    "make_episode.py",
+    "seal_episode.py"
+  ],
+  "independent_review": "Pending at snapshot creation; bind approval separately to these exact bytes.",
+  "predecessor_snapshot_sha256": "137afcd5ff0a508681a49ccf1b3b891d531ab16023e40b4d68ddfa09b44479fa",
+  "schema_version": 1,
+  "tools_sha256": {
+    "authority.py": "f9b59a34ed41ae9dc05135bbb26a14240c6923c22b544cd8521e8ea8bfd73882",
+    "close_episode.py": "0dd9a99ae839756b2faee807851181b4794843473879dcd6f816a353838d0bf6",
+    "exit_census.py": "3dcbf1e8b61e26062a3a7d63b6c8fd1b49869f163a7662427291f348b589b08d",
+    "launch_owned_lab.py": "85d34131dc42411548fbf5498acba449619dd2f9172880be519662f3482497bc",
+    "make_episode.py": "222201951e2ab10f822aecd4de42723025284a82184ae22490fe3040fd939fe7",
+    "open_episode.py": "aa6b70728797d5de32114a38faa65f0b908c8f07e8e3039f23e7b380e945fe4d",
+    "preopen.py": "c6a37db593c0ee59c57e930a94d46860948e0d7bd8db3e7192466fd9faedd17d",
+    "publish_seal.py": "514360293817203f0e5fb82acba77c9856cc9c4684f5c5a6ba3fcca287a11182",
+    "retire_owned_lab.py": "4ef5c8b21444e003d654fc662f5250fab7e89a45f30020cfeb12e5dca5cf2a06",
+    "run_qualification.py": "a4c7294ba335d89dd64f38cece526c9dbe94ea8972df3fb4550d7cd948a7f548",
+    "seal_episode.py": "28433a14c4774c6a705a5832347f5b7e61c3708f6d63520b866e57995550fd81"
+  }
+}

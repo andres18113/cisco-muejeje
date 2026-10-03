@@ -1,0 +1,129 @@
+"""Close the SP-2 ledger episode after recorded qualification and retirement."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from authority import (
+    cleanup_assessment,
+    prepared_plan,
+    require_opening,
+    verify_tools,
+)
+
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+)
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+verify_tools(EPISODE, Path(__file__))
+ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+prepared_plan(EPISODE, ids)
+
+
+def exit_code(name):
+    """Read one retained command exit without inferring a missing outcome."""
+    path = EPISODE / name
+    return int(path.read_text(encoding="utf-8").strip()) if path.is_file() else None
+
+
+def json_last_line(name):
+    """Read one optional recorded stdout summary for truthful closeout."""
+    path = EPISODE / name
+    if not path.is_file():
+        return {}
+    rows = path.read_text(encoding="utf-8").splitlines()
+    try:
+        return json.loads(rows[-1]) if rows else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+qualification = json_last_line("09-qualification.stdout")
+# e3: every retirement invocation and census is kept; the latest of each decides.
+suffixes = [s for s in ("", "b", "c") if (EPISODE / f"10{s}-retire.exit").is_file()]
+census_suffixes = [
+    s for s in ("", "b", "c") if (EPISODE / f"11{s}-exit-census.json").is_file()
+]
+last = suffixes[-1] if suffixes else ""
+retirement = json_last_line(f"10{last}-retire.stdout")
+census_path = (
+    EPISODE / f"11{census_suffixes[-1] if census_suffixes else ''}-exit-census.json"
+)
+census = (
+    json.loads(census_path.read_text(encoding="utf-8")) if census_path.is_file() else {}
+)
+store = ServerPtCommissioningStore(ROOT, SP2_CAMPAIGN.campaign_id)
+require_opening(ROOT, EPISODE, ids, store)
+clean, cleanup_label, disposition = cleanup_assessment(
+    ROOT, EPISODE, ids, store, census_path
+)
+closing = {
+    "episode": ids["episode"],
+    "attempt_id": ids["attempt_id"],
+    "source_sha": ids["head"],
+    "source_tree": ids["tree"],
+    "stage": ids["stage"],
+    "qualification_exit": exit_code("09-qualification.exit"),
+    "qualification_outcome": qualification.get("outcome", "unobserved"),
+    "qualification_record_path": qualification.get("record_path", ""),
+    "retirement_exit": exit_code(f"10{last}-retire.exit"),
+    "retirement_outcome": retirement.get("outcome", "unobserved"),
+    "retirement_attempts": [
+        {
+            "suffix": s,
+            "exit": exit_code(f"10{s}-retire.exit"),
+            "outcome": json_last_line(f"10{s}-retire.stdout").get(
+                "outcome", "unobserved"
+            ),
+            "refusal": json_last_line(f"10{s}-retire.stdout").get("refusal", []),
+        }
+        for s in suffixes
+    ],
+    "cleanup_state": cleanup_label,
+    "exit_disposition": disposition,
+    "exit_census_sha256": hashlib.sha256(census_path.read_bytes()).hexdigest()
+    if census_path.is_file()
+    else "",
+}
+with (EPISODE / "episode-closing.json").open("x", encoding="utf-8") as out:
+    json.dump(closing, out, sort_keys=True, indent=2)
+    out.write("\n")
+verify_tools(EPISODE, Path(__file__))
+require_opening(ROOT, EPISODE, ids, store)
+env = dict(os.environ)
+env["PT_MCP_GOVERNED_ROOT"] = str(ROOT)
+args = [
+    sys.executable,
+    "-B",
+    "-m",
+    "packet_tracer_mcp.adapters.cli.server_pt_commissioning",
+    "--close-episode",
+    "--campaign",
+    "sp2",
+    "--charter",
+    ids["charter"],
+    "--episode",
+    str(ids["episode"]),
+    "--episode-closing",
+    str(EPISODE / "episode-closing.json"),
+]
+with (EPISODE / "12-close-episode.stdout").open("x", encoding="utf-8") as stdout:
+    with (EPISODE / "12-close-episode.stderr").open("x", encoding="utf-8") as stderr:
+        result = subprocess.run(
+            args, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, timeout=60
+        )
+with (EPISODE / "12-close-episode.exit").open("x", encoding="utf-8") as out:
+    out.write(str(result.returncode) + "\n")
+raise SystemExit(result.returncode)

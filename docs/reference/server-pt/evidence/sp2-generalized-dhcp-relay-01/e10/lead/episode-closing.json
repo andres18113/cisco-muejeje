@@ -1,0 +1,23 @@
+{
+  "attempt_id": "cc423f961af6c86f4917687541af4133",
+  "cleanup_state": "verified_clean",
+  "episode": 10,
+  "exit_census_sha256": "22dc5bc0faaf6ee771661b77ae229d7bb347ef97dff24eeaeb37180e3d986640",
+  "exit_disposition": "exited",
+  "qualification_exit": 0,
+  "qualification_outcome": "completed",
+  "qualification_record_path": "C:\\Users\\Andres\\Desktop\\Universidad\\Uce\\Cuarto\\Infra\\Cisco-MCP-server-services-goal-foundations\\data\\services\\qualification\\sp2-eligible-acquisition\\sp2-eligible-acquisition-2026-10-03T21-45-41Z-4d01d2bd.json",
+  "retirement_attempts": [
+    {
+      "exit": 0,
+      "outcome": "exited",
+      "refusal": [],
+      "suffix": ""
+    }
+  ],
+  "retirement_exit": 0,
+  "retirement_outcome": "exited",
+  "source_sha": "40d6cfc46f23a44c9e087c484664808324fe8436",
+  "source_tree": "566f4635697484f328c3514f4a1b4b1d443620bf",
+  "stage": "SP2-ELIGIBLE-ACQUISITION"
+}

@@ -1,0 +1,11 @@
+{
+  "attempt_id": "cc423f961af6c86f4917687541af4133",
+  "campaign_lock_present": false,
+  "episode": 10,
+  "mailbox_files": [],
+  "observed_at_utc": "2026-10-03T22:24:40.541072+00:00",
+  "process_error": "",
+  "processes": [],
+  "schema_version": 1,
+  "stage": "SP2-ELIGIBLE-ACQUISITION"
+}

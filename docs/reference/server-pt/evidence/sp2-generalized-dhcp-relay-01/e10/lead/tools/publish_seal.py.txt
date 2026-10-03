@@ -1,0 +1,109 @@
+"""Publish an already complete sealed episode without changing its native identity."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+from pathlib import Path
+
+from authority import regular, verify_tools
+
+from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+).resolve()
+
+
+def verify(folder: Path) -> tuple[dict[str, str], str]:
+    """Verify exact regular-file set and every manifest byte hash."""
+    manifest = folder / "MANIFEST.sha256"
+    regular(manifest)
+    rows = {}
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        expected, name = line.split("  ", 1)
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", expected)
+            or not name
+            or "\\" in name
+            or Path(name).is_absolute()
+            or any(part in {"", ".", ".."} for part in name.split("/"))
+            or name == "MANIFEST.sha256"
+            or name in rows
+        ):
+            raise RuntimeError("manifest_path_or_digest_invalid")
+        path = resolve_within(folder, *Path(name).parts)
+        regular(path)
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != expected:
+            raise RuntimeError("manifest_file_hash_changed")
+        rows[name] = expected
+    entries = list(folder.rglob("*"))
+    if any(
+        p.is_symlink()
+        or getattr(p.lstat(), "st_file_attributes", 0) & 1024
+        or not p.resolve().is_relative_to(folder.resolve())
+        for p in entries
+    ):
+        raise RuntimeError("manifest_inventory_path_escaped")
+    actual = {
+        p.relative_to(folder).as_posix()
+        for p in entries
+        if p.is_file() and p != manifest
+    }
+    if not rows or actual != set(rows):
+        raise RuntimeError("manifest_file_set_changed")
+    return rows, hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+
+def main() -> None:
+    """Copy only a verified sealed tree to its exclusive docs episode path."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("seal", type=Path)
+    args = parser.parse_args()
+    verify_tools(Path(__file__).resolve().parent.parent, Path(__file__))
+    seal = args.seal.resolve()
+    if not seal.is_relative_to(ROOT / "data/services/sp2-governed/sealed"):
+        raise RuntimeError("seal_outside_governed_root")
+    before, manifest_hash = verify(seal)
+    ids = json.loads((seal / "lead" / "ids.json").read_text(encoding="utf-8"))
+    episode = ids["episode"]
+    if type(episode) is not int or episode < 1:
+        raise RuntimeError("episode_identity_invalid")
+    target = resolve_within(
+        ROOT,
+        "docs",
+        "reference",
+        "server-pt",
+        "evidence",
+        "sp2-generalized-dhcp-relay-01",
+        safe_name_component("e" + str(episode)),
+    )
+    if target.exists():
+        raise RuntimeError("published_archive_already_exists")
+    shutil.copytree(seal, target)
+    after, published_hash = verify(target)
+    if after != before or published_hash != manifest_hash:
+        raise RuntimeError("published_archive_differs_from_seal")
+    print(
+        json.dumps(
+            {
+                "episode": episode,
+                "executed_sha": ids["head"],
+                "executed_tree": ids["tree"],
+                "seal": str(seal),
+                "archive": str(target),
+                "hash_entries": len(after),
+                "sealed_manifest_sha256": manifest_hash,
+                "published_manifest_sha256": published_hash,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

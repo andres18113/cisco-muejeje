@@ -1,0 +1,9 @@
+{
+  "reviewed_at": "2026-10-03T21:02:14.870930+00:00",
+  "reviewer": "Codex-native read-only candidate_review agent",
+  "schema_version": 1,
+  "scope": "Exact prospective helper bytes; no source delivery, LIVE admission or phase acceptance.",
+  "snapshot_sha256": "f74d300c8a21d04987ff72385853ae3e1238173409ab877f03d954fb019afed4",
+  "status": "APPROVED_EXACT_HELPER_BYTES",
+  "verification": "Exact11 hashes/file set, compilation, cohort positives/omission/malformed negatives, three-profile AST rendering with actual product status separate from measurement conclusion."
+}

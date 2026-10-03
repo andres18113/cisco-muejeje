@@ -1,0 +1,1182 @@
+....................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s...........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................{"archives": 2, "diagnostics": 1, "issues": 0, "journal_entries": 9, "journals": 3, "required_observations": 2, "results": 1, "stages": 1, "utf8_bytes": 13377}
+.{"archives": 2, "diagnostics": 2, "issues": 0, "journal_entries": 18, "journals": 6, "required_observations": 4, "results": 2, "stages": 2, "utf8_bytes": 24349}
+.{"archives": 2, "diagnostics": 4, "issues": 0, "journal_entries": 36, "journals": 12, "required_observations": 8, "results": 4, "stages": 4, "utf8_bytes": 46273}
+...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_PC1:removal_refused_unproven_receiver", "device:__MCP_E6Q_SRV:removal_refused_unproven_receiver", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "not_evaluated", "id": "M-DWEB-0", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-1", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-2", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-3", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-4", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-5", "status": "not_run"}], "observed_build": "9.0.1.0858", "operations_used": 9, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_replacement_before_the_0\\replaced0\\records\\d-web\\d-web-2026-10-03T20-36-08Z-c679c912.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-08Z-c679c912", "secondary_failures": ["authority:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "not_evaluated", "id": "M-DWEB-0", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-1", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-2", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-3", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-4", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-5", "status": "not_run"}], "observed_build": "9.0.1.0858", "operations_used": 4, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_second_packet_tracer_mi0\\replaced0\\records\\d-web\\d-web-2026-10-03T20-36-08Z-d0438485.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-08Z-d0438485", "secondary_failures": ["authority:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+..................{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "not_evaluated", "id": "M-DWEB-0", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-1", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-2", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-3", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-4", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-5", "status": "not_run"}], "observed_build": "9.0.1.0858", "operations_used": 4, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_terminal_reading_withou0\\replaced0\\records\\d-web\\d-web-2026-10-03T20-36-12Z-9bfe9480.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-12Z-9bfe9480", "secondary_failures": ["authority:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+..............{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_PC2:removal_not_attempted", "device:__MCP_E6Q_PC1:removal_not_attempted", "device:__MCP_E6Q_SRV:removal_not_attempted", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "supported_in_sample", "id": "M-DWEB-0", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-1", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-2", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-3", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-4", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-5", "status": "ran"}], "observed_build": "9.0.1.0858", "operations_used": 48, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_receiver_replaced_betwe0\\bound0\\records\\d-web\\d-web-2026-10-03T20-36-14Z-87e2c1be.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-14Z-87e2c1be", "secondary_failures": ["authority:process_instance:changed", "remove:__MCP_E6Q_PC2:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_PC1:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_SRV:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_SW:removal_not_attempted", "device:__MCP_E6Q_PC2:removal_not_attempted", "device:__MCP_E6Q_PC1:removal_not_attempted", "device:__MCP_E6Q_SRV:removal_not_attempted", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "supported_in_sample", "id": "M-DWEB-0", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-1", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-2", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-3", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-4", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-5", "status": "ran"}], "observed_build": "9.0.1.0858", "operations_used": 47, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_receiver_replaced_betwe1\\bound0\\records\\d-web\\d-web-2026-10-03T20-36-15Z-810b01b5.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-15Z-810b01b5", "secondary_failures": ["authority:process_instance:changed", "remove:__MCP_E6Q_SW:execution_authority_lost:effect:remove:__MCP_E6Q_SW:process_instance:changed", "remove:__MCP_E6Q_PC2:execution_authority_lost:effect:remove:__MCP_E6Q_SW:process_instance:changed", "remove:__MCP_E6Q_PC1:execution_authority_lost:effect:remove:__MCP_E6Q_SW:process_instance:changed", "remove:__MCP_E6Q_SRV:execution_authority_lost:effect:remove:__MCP_E6Q_SW:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_SRV:removal_refused_unproven_receiver", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "not_evaluated", "id": "M-DWEB-0", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-1", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-2", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-3", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-4", "status": "not_run"}, {"conclusion": "not_evaluated", "id": "M-DWEB-5", "status": "not_run"}], "observed_build": "9.0.1.0858", "operations_used": 6, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_receiver_replaced_durin0\\bound0\\records\\d-web\\d-web-2026-10-03T20-36-15Z-04244871.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-15Z-04244871", "secondary_failures": ["authority:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_PC2:removal_not_attempted", "device:__MCP_E6Q_PC1:removal_not_attempted", "device:__MCP_E6Q_SRV:removal_not_attempted", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "supported_in_sample", "id": "M-DWEB-0", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-1", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-2", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-3", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-4", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-5", "status": "ran"}], "observed_build": "9.0.1.0858", "operations_used": 48, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_the_same_fixture_names_in0\\bound0\\records\\d-web\\d-web-2026-10-03T20-36-15Z-4eecd6c9.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-15Z-4eecd6c9", "secondary_failures": ["authority:process_instance:changed", "remove:__MCP_E6Q_PC2:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_PC1:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_SRV:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "coordination_residue": [], "dirty_state": "unknown", "engine_residue": ["process_instance:changed", "device:__MCP_E6Q_PC2:removal_not_attempted", "device:__MCP_E6Q_PC1:removal_not_attempted", "device:__MCP_E6Q_SRV:removal_not_attempted", "process_instance:changed"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "supported_in_sample", "id": "M-DWEB-0", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-1", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-2", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-3", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-4", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-5", "status": "ran"}], "observed_build": "9.0.1.0858", "operations_used": 48, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:process_instance:changed", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_the_same_pid_with_a_new_i0\\bound0\\records\\d-web\\d-web-2026-10-03T20-36-16Z-6adb4d4b.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-16Z-6adb4d4b", "secondary_failures": ["authority:process_instance:changed", "remove:__MCP_E6Q_PC2:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_PC1:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "remove:__MCP_E6Q_SRV:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:process_instance:changed", "lifecycle:process_instance:changed"], "stage": "D-WEB"}
+.{"channel": "file", "claim_release": {"detail": "campaign_release_skipped:campaign_claim:released_by_someone_else", "kind": "claim", "outcome": "release_unverified", "resource": "campaign:lock"}, "coordination_residue": ["campaign_release_skipped:campaign_claim:released_by_someone_else"], "dirty_state": "unknown", "engine_residue": ["campaign_claim:released_by_someone_else", "device:__MCP_E6Q_PC2:removal_not_attempted", "device:__MCP_E6Q_PC1:removal_not_attempted", "device:__MCP_E6Q_SRV:removal_not_attempted"], "executed_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "execution_mode": "offline_simulation", "measurements": [{"conclusion": "supported_in_sample", "id": "M-DWEB-0", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-1", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-2", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-3", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-4", "status": "ran"}, {"conclusion": "supported_in_sample", "id": "M-DWEB-5", "status": "ran"}], "observed_build": "9.0.1.0858", "operations_used": 48, "outcome": "stopped", "persist_error": "", "persisted_step": "finalization:completed", "primary_failure": "execution_authority_lost:campaign_claim:released_by_someone_else", "record_path": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_a_lost_campaign_claim_ref0\\unclaimed\\records\\d-web\\d-web-2026-10-03T20-36-16Z-7f395b90.json", "refusals": [], "restoration_proven": false, "run_id": "2026-10-03T20-36-16Z-7f395b90", "secondary_failures": ["authority:campaign_claim:released_by_someone_else", "remove:__MCP_E6Q_PC2:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:campaign_claim:released_by_someone_else", "remove:__MCP_E6Q_PC1:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:campaign_claim:released_by_someone_else", "remove:__MCP_E6Q_SRV:execution_authority_lost:effect:remove:__MCP_E6Q_PC2:campaign_claim:released_by_someone_else", "campaign_release:campaign_release_skipped:campaign_claim:released_by_someone_else"], "stage": "D-WEB"}
+...................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................Ruff gate: no selected Python files.
+.I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_exact_authorization_keeps0\checkout\smuggled.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_exact_authorization_keeps0\checkout\smuggled.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+D103 Missing docstring in public function
+  --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_exact_authorization_keeps0\checkout\smuggled.py:11:5
+   |
+11 | def smuggled():
+   |     ^^^^^^^^
+12 |     return 1
+   |
+
+Found 3 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+.I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_grant0\checkout\historical.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_grant0\checkout\historical.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+.I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_leave0\checkout\historical.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_leave0\checkout\historical.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_leave0\checkout\smuggled.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_leave0\checkout\smuggled.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+D103 Missing docstring in public function
+  --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_stale_authorization_leave0\checkout\smuggled.py:11:5
+   |
+11 | def smuggled():
+   |     ^^^^^^^^
+12 |     return 1
+   |
+
+Found 5 errors.
+[*] 2 fixable with the `--fix` option.
+2 files already formatted
+............I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_prints_active_and_in0\checkout\historical.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_prints_active_and_in0\checkout\historical.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+..................................................................................................................................I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_exempts_only_files_p0\check out\smuggled.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_exempts_only_files_p0\check out\smuggled.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+D103 Missing docstring in public function
+  --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_exempts_only_files_p0\check out\smuggled.py:11:5
+   |
+11 | def smuggled():
+   |     ^^^^^^^^
+12 |     return 1
+   |
+
+Found 3 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+.I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_without_authorizatio0\checkout\historical.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_without_authorizatio0\checkout\historical.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+.Ruff gate: no selected Python files.
+......Provisional worktree validation; staged bytes are not validated independently.
+Comparison base: 57f4ff3e8b653b348ab6dcd20c6bd5d4388bcc92 -> 57f4ff3e8b653b348ab6dcd20c6bd5d4388bcc92
+Merge base: 57f4ff3e8b653b348ab6dcd20c6bd5d4388bcc92
+Changed Python files: 1
+Mechanical-only exempt: 0
+Ruff-gated Python files: 1
+Authorized mechanical migrations: CANONICAL_PYTHON_NAMESPACE
+Mechanical proof: provisional, over working-tree bytes with normalized line endings; not delivery evidence.
+Unverifiable mechanical comparison for opaque.py: The base revision is not decodable UTF-8.
+I001 [*] Import block is un-sorted or un-formatted
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_run_fails_when_a_com0\checkout\opaque.py:3:1
+  |
+1 |   """Historical module."""
+2 |
+3 | / from packet_tracer_mcp.domain.models import Device
+4 | | import os
+  | |_________^
+help: Organize imports
+  |
+2 |
+  - from packet_tracer_mcp.domain.models import Device
+3 | import os
+4 |
+5 + from packet_tracer_mcp.domain.models import Device
+6 +
+7 |
+  |
+
+D103 Missing docstring in public function
+ --> C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_gate_run_fails_when_a_com0\checkout\opaque.py:7:5
+  |
+7 | def build(name):
+  |     ^^^^^
+8 |     return Device(name, os.name)
+  |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+1 file already formatted
+...........................................................Active legacy imports:          0
+Active legacy string references: 0
+Retained inert mentions:        66 in 23 file(s)
+Unreviewed inert mentions:      0
+Prose mentions (never active):  11
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --command arbitrary
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --ios arbitrary
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --javascript arbitrary
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --binding arbitrary
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --switch-port arbitrary
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: the following arguments are required: --execute, --model, --qualification-id
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: the following arguments are required: --model, --qualification-id
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: the following arguments are required: --execute, --qualification-id
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: the following arguments are required: --qualification-id
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: the following arguments are required: --execute
+usage: __main__.py [-h] --execute --model MODEL --qualification-id
+                   QUALIFICATION_ID
+__main__.py: error: unrecognized arguments: --ios show run
+...................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................LIVE OPEN poe3b-offline-e2e-20261003T204021Z-3f630aee source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+AUTO_1 captured; ports=[{'port': 'FastEthernet0/1', 'row': {'interface': 'Fa0/1', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/2', 'row': {'interface': 'Fa0/2', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/3', 'row': {'interface': 'Fa0/3', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/4', 'row': {'interface': 'Fa0/4', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/5', 'row': {'interface': 'Fa0/5', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/6', 'row': {'interface': 'Fa0/6', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/7', 'row': {'interface': 'Fa0/7', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/8', 'row': {'interface': 'Fa0/8', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/9', 'row': {'interface': 'Fa0/9', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/10', 'row': {'interface': 'Fa0/10', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/11', 'row': {'interface': 'Fa0/11', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/12', 'row': {'interface': 'Fa0/12', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/13', 'row': {'interface': 'Fa0/13', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/14', 'row': {'interface': 'Fa0/14', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/15', 'row': {'interface': 'Fa0/15', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/16', 'row': {'interface': 'Fa0/16', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/17', 'row': {'interface': 'Fa0/17', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/18', 'row': {'interface': 'Fa0/18', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/19', 'row': {'interface': 'Fa0/19', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/20', 'row': {'interface': 'Fa0/20', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/21', 'row': {'interface': 'Fa0/21', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}]; completeness=True
+NEVER captured; ports=[{'port': 'FastEthernet0/1', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/2', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/3', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/4', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/5', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/6', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/7', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/8', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/9', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/10', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/11', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/12', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/13', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/14', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/15', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/16', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/17', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/18', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/19', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/20', 'row': None, 'delivery': 'not_delivering'}, {'port': 'FastEthernet0/21', 'row': None, 'delivery': 'not_delivering'}]; completeness=True
+AUTO_2 captured; ports=[{'port': 'FastEthernet0/1', 'row': {'interface': 'Fa0/1', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/2', 'row': {'interface': 'Fa0/2', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/3', 'row': {'interface': 'Fa0/3', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/4', 'row': {'interface': 'Fa0/4', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/5', 'row': {'interface': 'Fa0/5', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/6', 'row': {'interface': 'Fa0/6', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/7', 'row': {'interface': 'Fa0/7', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/8', 'row': {'interface': 'Fa0/8', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/9', 'row': {'interface': 'Fa0/9', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/10', 'row': {'interface': 'Fa0/10', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/11', 'row': {'interface': 'Fa0/11', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/12', 'row': {'interface': 'Fa0/12', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/13', 'row': {'interface': 'Fa0/13', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/14', 'row': {'interface': 'Fa0/14', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/15', 'row': {'interface': 'Fa0/15', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/16', 'row': {'interface': 'Fa0/16', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/17', 'row': {'interface': 'Fa0/17', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/18', 'row': {'interface': 'Fa0/18', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/19', 'row': {'interface': 'Fa0/19', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/20', 'row': {'interface': 'Fa0/20', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}, {'port': 'FastEthernet0/21', 'row': {'interface': 'Fa0/21', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 15.4}, 'delivery': 'delivering'}]; completeness=True
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-positive-20261003T204021Z-26ba225d source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+AUTO_1 captured; ports=[{'port': 'GigabitEthernet1/0/2', 'row': {'interface': 'Gig1/0/2', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/3', 'row': {'interface': 'Gig1/0/3', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/5', 'row': {'interface': 'Gig1/0/5', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/6', 'row': {'interface': 'Gig1/0/6', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/7', 'row': {'interface': 'Gig1/0/7', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/8', 'row': {'interface': 'Gig1/0/8', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/9', 'row': {'interface': 'Gig1/0/9', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/10', 'row': {'interface': 'Gig1/0/10', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/11', 'row': {'interface': 'Gig1/0/11', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/12', 'row': {'interface': 'Gig1/0/12', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/13', 'row': {'interface': 'Gig1/0/13', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}]; completeness=True
+NEVER captured; ports=[{'port': 'GigabitEthernet1/0/2', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/3', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/5', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/6', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/7', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/8', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/9', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/10', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/11', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/12', 'row': None, 'delivery': 'not_delivering'}, {'port': 'GigabitEthernet1/0/13', 'row': None, 'delivery': 'not_delivering'}]; completeness=True
+AUTO_2 captured; ports=[{'port': 'GigabitEthernet1/0/2', 'row': {'interface': 'Gig1/0/2', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/3', 'row': {'interface': 'Gig1/0/3', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/5', 'row': {'interface': 'Gig1/0/5', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/6', 'row': {'interface': 'Gig1/0/6', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/7', 'row': {'interface': 'Gig1/0/7', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/8', 'row': {'interface': 'Gig1/0/8', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/9', 'row': {'interface': 'Gig1/0/9', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/10', 'row': {'interface': 'Gig1/0/10', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/11', 'row': {'interface': 'Gig1/0/11', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/12', 'row': {'interface': 'Gig1/0/12', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}, {'port': 'GigabitEthernet1/0/13', 'row': {'interface': 'Gig1/0/13', 'admin': 'auto', 'oper': 'on', 'power_watts': 10.0, 'device': 'IP Phone 7960', 'power_class': '3', 'max_watts': 30.0}, 'delivery': 'delivering'}]; completeness=True
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-boot-timeout-20261003T204021Z-a98d3f86 source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-ambiguous-20261003T204021Z-01afb696 source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-wrong-delta-20261003T204021Z-9d28b97e source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-unobservable-identity-20261003T204021Z-b7f521b0 source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LIVE CLOSED; persisting after cleanup
+.LIVE OPEN poe3b-offline-3650-capture-refusal-20261003T204021Z-20a0219d source=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+LIVE CLOSED; persisting after cleanup
+.........................................................{
+  "bundle": "C:\\Users\\Andres\\AppData\\Local\\Temp\\pytest-of-Andres\\pytest-3702\\test_promotion_succeeds_withou0\\docs\\reference\\cp-scale\\canonical-live-evidence\\poe3b-offline-20261003T204022Z-2a9f4a27",
+  "qualification_plan": {
+    "packet_tracer_build": "9.0.1.0858",
+    "candidate_model": "3560-24PS",
+    "bindings": [
+      {
+        "switch_port": "FastEthernet0/1",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/2",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/3",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/4",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/5",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/6",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/7",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/8",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/9",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/10",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/11",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/12",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/13",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/14",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/15",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/16",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/17",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/18",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/19",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/20",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      },
+      {
+        "switch_port": "FastEthernet0/21",
+        "endpoint_model": "7960",
+        "endpoint_port": "Switch"
+      }
+    ],
+    "simultaneous_active_ports": 21
+  },
+  "measured": [
+    {
+      "label": "AUTO_1",
+      "admin_mode": "auto",
+      "binding_captures": [
+        {
+          "switch_port": "FastEthernet0/1",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/2",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/3",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/4",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/5",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/6",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/7",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/8",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/9",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/10",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/11",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/12",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/13",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/14",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/15",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/16",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/17",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/18",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/19",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/20",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/21",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        }
+      ]
+    },
+    {
+      "label": "NEVER",
+      "admin_mode": "never",
+      "binding_captures": [
+        {
+          "switch_port": "FastEthernet0/1",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/2",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/3",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/4",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/5",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/6",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/7",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/8",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/9",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/10",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/11",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/12",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/13",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/14",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/15",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/16",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/17",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/18",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/19",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/20",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        },
+        {
+          "switch_port": "FastEthernet0/21",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "absent",
+          "power_watts": 0.0,
+          "row_present": false,
+          "delivering": false
+        }
+      ]
+    },
+    {
+      "label": "AUTO_2",
+      "admin_mode": "auto",
+      "binding_captures": [
+        {
+          "switch_port": "FastEthernet0/1",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/2",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/3",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/4",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/5",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/6",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/7",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/8",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/9",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/10",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/11",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/12",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/13",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/14",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/15",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/16",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/17",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/18",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/19",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/20",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        },
+        {
+          "switch_port": "FastEthernet0/21",
+          "endpoint_model": "7960",
+          "endpoint_port": "Switch",
+          "oper_state": "on",
+          "power_watts": 10.0,
+          "row_present": true,
+          "delivering": true
+        }
+      ]
+    }
+  ],
+  "pse_contract_accepts_the_measurement": true,
+  "integration_result": "PERSISTED",
+  "restoration": true,
+  "safety": {
+    "source_branch": "feature/runtime-ripv2",
+    "source_head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_tree": "cccccccccccccccccccccccccccccccccccccccc",
+    "upstream": "cisco/feature/runtime-ripv2",
+    "upstream_head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "worktree_clean": true,
+    "processes": [
+      {
+        "Name": "PacketTracer.exe",
+        "ProcessId": 42,
+        "ParentProcessId": 1,
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" "
+      },
+      {
+        "Name": "PacketTracer.exe",
+        "ProcessId": 43,
+        "ParentProcessId": 42,
+        "ExecutablePath": "C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe",
+        "CommandLine": "\"C:\\Program Files\\Cisco Packet Tracer 9.0.1\\bin\\PacketTracer.exe\" --progress-bar-server"
+      }
+    ],
+    "bridge_healthy": true,
+    "mailbox_entries": [],
+    "transport_problems": []
+  },
+  "problems": []
+}
+RUNTIME AUTHORITY ALREADY PROMOTED WITHOUT RECEIPT: C:\Users\Andres\AppData\Local\Temp\pytest-of-Andres\pytest-3702\test_receipt_write_failure_aft0\data\capabilities\runtime\9.0.1.0858\c385c9bb25cf8554ce2bd83204bdde61839961064ca351ec2cc3f1ab31943d0b.json
+.............LIVE CLOSED; persisting after cleanup
+..........................................................................................................................POE3B_CURRENT_HASHES={"configuration": "e655ee29f8bbcd4367ed702e63edaf891055d40eb5cf5dc937cc14fb04f1de29", "control": "366911d2d4ea1b56405125fc1b5cc17773200761e1cbb758f8793360eae23731", "delta": "eea224301aef3d5153cf95381a49400db07e471e5e6f6b05ad31894a88940487", "topology": "9ea98a4d81bc7e1f19cbb538707569fadbfcb80c4c30bde796b9c3da53f22e67", "voice": "e51db32c211d2c38659e1f62fb707f680f7c9bd820c3d2e10c4847d38d3106d8"}
+POE3B_VOICE_SOURCES={"source_configuration_hash": "e655ee29f8bbcd4367ed702e63edaf891055d40eb5cf5dc937cc14fb04f1de29", "source_topology_hash": "9ea98a4d81bc7e1f19cbb538707569fadbfcb80c4c30bde796b9c3da53f22e67"}
+................................................................................................................................................................................................................................................................................................................................................s........{"event": "VOICE_AB_LEDGER_VERIFY", "recorded": 1, "compared": 1, "mismatched": []}
+{"event": "VOICE_AB_LEDGER_VERIFY", "recorded": 1, "compared": 1, "mismatched": ["positive-voice-ab-run9-probe.json"]}
+......................................................................................s.............................................................................................................................................................................................................................................................................................................................................................................{"outcome": "stopped", "primary_failure": "cancelled"}
+..................................................All checks passed!
+1 file already formatted
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/lead/launch_owned_lab.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/lead/run_qualification.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/current-status.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/process-exit.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/process-exit.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/process-launch.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/process-launch.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/qualification-archive-admission.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/qualification-archive-admission.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/qualification-status.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/qualification-status.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/retirement-claim-release-964eefe614b64d86a173b30f6a6491db.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/retirement-claim-release-964eefe614b64d86a173b30f6a6491db.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/source-ref-qualification-record.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/e61273ccccbf4492a33d5e02798facfb/source-ref-qualification-record.sha256', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/index.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/ledger/episode-0001-closing.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/ledger/episode-0001-e61273ccccbf4492a33d5e02798facfb-qualification-admission.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/ledger/episode-0001-e61273ccccbf4492a33d5e02798facfb-qualification-result.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/reference/server-pt/evidence/dhcp-autonomy-02/e1/store/ledger/episode-0001-opening.json', LF will be replaced by CRLF the next time Git touches it
+....................s.................................................................................................................................................................................................................................................................................................................................................................................{"claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "outcome": "refused", "record_path": "", "refusals": [{"detail": "This attempt identity already has a record; a new SHA or process does not create an attempt.", "kind": "not_permitted", "subject": "attempt_identity"}]}
+.{"claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "outcome": "refused", "record_path": "", "refusals": [{"detail": "The record store cannot state whether this attempt is new.", "kind": "unobservable", "subject": "attempt_identity"}]}
+.{"claim_release": {"detail": "", "kind": "claim", "outcome": "released", "resource": "campaign:lock"}, "outcome": "refused", "record_path": "", "refusals": [{"detail": "The executable D-WEB composition is incomplete: forwarding_probe.", "kind": "not_permitted", "subject": "fixture"}]}
+...................................................................................................................................................................................................................................................................................................................................................................................................ss....................................................................................................................F................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................{"check_lookups": 2, "clients": 2, "group_assemblies": 1, "group_json_bytes": 245, "persist_round_trip_ms": 34.132, "record_bytes": 4721, "verification_calls": 2, "verify_ms": 0.442}
+.{"check_lookups": 20, "clients": 20, "group_assemblies": 1, "group_json_bytes": 2441, "persist_round_trip_ms": 7.801, "record_bytes": 28572, "verification_calls": 20, "verify_ms": 1.171}
+.{"check_lookups": 200, "clients": 200, "group_assemblies": 1, "group_json_bytes": 24401, "persist_round_trip_ms": 14.076, "record_bytes": 267073, "verification_calls": 200, "verify_ms": 11.52}
+.{"check_lookups": 1000, "clients": 1000, "group_assemblies": 1, "group_json_bytes": 122001, "persist_round_trip_ms": 57.689, "record_bytes": 1327074, "verification_calls": 1000, "verify_ms": 94.159}
+.............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+SP1-SCALE clients=3 routed_groups=3 router_reads=6 continuity=0 rows_per_client=6.0 response_bytes=36964 record_bytes=217097 seconds=0.93 peak_mib=2.4
+.
+SP1-SCALE clients=21 routed_groups=3 router_reads=6 continuity=0 rows_per_client=6.0 response_bytes=157582 record_bytes=676079 seconds=1.45 peak_mib=6.4
+.
+SP1-SCALE clients=201 routed_groups=5 router_reads=15 continuity=4 rows_per_client=6.0 response_bytes=1995213 record_bytes=6505645 seconds=10.41 peak_mib=55.9
+.
+SP1-SCALE clients=997 routed_groups=5 router_reads=15 continuity=4 rows_per_client=6.0 response_bytes=9704336 record_bytes=30798877 seconds=76.28 peak_mib=262.0
+......
+SP1-W2 product dispatches=247 stage operations=336
+.
+SP1-W1 product dispatches=100
+...............................................................................................................
+SP2-CAPACITY campus_calls=317 engine_calls=838 stage_operations=1606 seconds=30.0
+.......
+SP2-SCALE clients=2 services=2 group_scans=4 dispatches=32 dispatches_per_client=16.0 response_bytes=14305 record_bytes=143492 seconds=0.63 peak_mib=1.7
+.
+SP2-SCALE clients=21 services=5 group_scans=10 dispatches=164 dispatches_per_client=7.8 response_bytes=85771 record_bytes=784479 seconds=1.34 peak_mib=6.5
+.
+SP2-SCALE clients=201 services=5 group_scans=10 dispatches=1244 dispatches_per_client=6.2 response_bytes=757916 record_bytes=5351306 seconds=7.77 peak_mib=40.4
+.
+SP2-SCALE clients=997 services=5 group_scans=10 dispatches=6020 dispatches_per_client=6.0 response_bytes=3559991 record_bytes=24607642 seconds=56.50 peak_mib=184.6
+......................................................
+SP2-MIXED product campus calls=198 engine calls=191 stage operations=517
+..................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+================================== FAILURES ===================================
+_________ test_every_executable_stage_has_exactly_the_former_handler __________
+
+    def test_every_executable_stage_has_exactly_the_former_handler():
+        """The table reproduces the former dispatch for every executable stage.
+    
+        Declarative stages are refused by request admission before any record,
+        so they have no handler; the former chain's `else` could not reach them.
+        A stage added later is listed as a named successor, never folded into
+        the former table.
+        """
+        coordinator = importlib.import_module(f"{PACKAGE}.coordinator")
+        handlers = coordinator.STAGE_HANDLERS
+        executable = {
+            stage
+            for stage in QualificationStage
+            if (definition := stage_definition(stage.value)) is not None
+            and definition.executable
+        }
+    
+        assert not set(SUCCESSOR_HANDLERS) & set(STARTING_HANDLERS)
+        expected = {**STARTING_HANDLERS, **SUCCESSOR_HANDLERS}
+>       assert set(handlers) == executable == set(expected)
+E       AssertionError: assert {<Qualificati...-FL-C1'>, ...} == {<Qualificati...-FL-C1'>, ...}
+E         
+E         Extra items in the left set:
+E         <QualificationStage.SP2_ELIGIBLE_ACQUISITION: 'SP2-ELIGIBLE-ACQUISITION'>
+E         Use -v to get more diff
+
+tests\test_server_service_qualification_architecture.py:466: AssertionError
+============================== warnings summary ===============================
+tests/test_e95_interface_routing_semantics.py::TestTheReferenceIsUnchanged::test_the_reference_still_emits_no_bandwidth_anywhere
+tests/test_e95_productive_pipeline.py::TestTheCompilerReachesLinkPerformance::test_the_reference_still_compiles_after_the_wiring
+tests/test_e95_productive_pipeline.py::TestUnknownProfileNeverMutates::test_an_unknown_profile_produces_zero_link_mode_mutations
+  C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations\.venv\Lib\site-packages\_pytest\fixtures.py:1313: PytestRemovedIn10Warning: Class-scoped fixture defined as instance method is deprecated.
+  Instance attributes set in this fixture will NOT be visible to test methods,
+  as each test gets a new instance while the fixture runs only once per class.
+  Use @classmethod decorator and set attributes on cls instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
+    fixturefunc = resolve_fixture_function(fixturedef, request)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_server_service_qualification_architecture.py::test_every_executable_stage_has_exactly_the_former_handler
+1 failed, 8892 passed, 6 skipped, 3 warnings in 1578.62s (0:26:18)

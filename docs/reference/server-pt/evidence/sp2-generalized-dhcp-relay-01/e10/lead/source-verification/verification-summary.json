@@ -1,0 +1,51 @@
+{
+  "affected_result": "256 passed in89.48s after architecture correction.",
+  "artifact_sha256": {
+    "affected.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "affected.log": "2fca2581ea2fe2a4c63c027ff4b56b2b8bbacb39370c2910730945bd14cbf115",
+    "affected.xml": "eaa23b311cb6d8b498d76093549ae7f0de9201556d2705302df1213051c246bd",
+    "delivery.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "delivery.log": "984270b5b9dc9ae797cdb74161058e25fff591094cafd808c8eab03e642de1e6",
+    "docs.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "docs.log": "241cabe07dd411ff3d0485ec84dbb16134e54b5d2fd95bcc841caca5f18b24cf",
+    "full.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "full.log": "8e962d18544d0a3d9b927dd2478b5153d802c13ca2ed761b40da53d9ba1cb2ac",
+    "full.xml": "02fc3db8b1d76502a5aaf91b91e6369b28f53b8fefaf5d8e52a8d75942431be9",
+    "namespace.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "namespace.log": "4a1c246670fcc4eaf32cffec19775ecad7a16e5d8df7abbd3b934a2946f04af8",
+    "scale.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "scale.log": "544abde96b929bfb262727c14e884afa97daec069a4f73e534580afb20dbca79",
+    "whitespace.exit": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+    "whitespace.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "delivery_clean_exact": true,
+  "full_result": "8893 passed, 6 skipped, 3 existing warnings in 1556.47s; prior8892pass/1 architecture inventory failure retained and corrected with36 focused passes.",
+  "head": "40d6cfc46f23a44c9e087c484664808324fe8436",
+  "observed_at_utc": "2026-10-03T21:32:12.627237+00:00",
+  "scale_result": "4 actual scale cases passed at2/21/201/997 constructed clients,80.91s;997:10group scans6020dispatches3559991response bytes24607650record bytes54.70s184.3MiB.",
+  "skip_reasons": {
+    "Windows symlink privileges unavailable": 2,
+    "ignored historical voice artifacts absent": 2,
+    "native window tests opt-in unset": 2
+  },
+  "source_python_scope": "Changed Python since reviewed checkpoint2d38364; exact runtime/test bytes checked before clean delivery.",
+  "source_python_sha256": {
+    "src/packet_tracer_mcp/adapters/cli/service_qualification.py": "2d2150b3ec7caf4e6cc327d07c1eca4ca6d903aaa6736b0ea5115004c1c74d41",
+    "src/packet_tracer_mcp/adapters/service_session.py": "c40f0d6355e6f3991432a57dd1d09a476d32ba3de4d2312b08387b67e72bdff5",
+    "src/packet_tracer_mcp/application/server_service_qualification/campaign_authority.py": "bbb9404391004d70341bcafd6b277d9a064fc633e62fed079621440741f2d74a",
+    "src/packet_tracer_mcp/application/server_service_qualification/coordinator.py": "66cbadafd0a8f209c6eca05e46b675053bbc497f168e1e3abf1757b74c37e7c8",
+    "src/packet_tracer_mcp/application/server_service_qualification/workflows/sp2_mixed_product.py": "3e699dc19e1cee55cb196dfeae1ff6061a7a5a94a1ece785156f1a6fa36d9cfd",
+    "src/packet_tracer_mcp/domain/enterprise/models/service_plan.py": "1301b06d04e26edb603546653165732f80e33efef5a1b6b3dd6a6fa00f2759c6",
+    "src/packet_tracer_mcp/domain/enterprise/models/service_qualification.py": "4199149bd2e8cc33f67d4687097b79abe513d9770ddde26da2ee947f9db273f5",
+    "src/packet_tracer_mcp/domain/enterprise/services/service_diagnostic_profiles.py": "fed2adb62a99b2d6e9f935caed14920809d50c77dae0724e1b4f4f5a3ef5027c",
+    "src/packet_tracer_mcp/domain/enterprise/services/sp2_eligible_acquisition.py": "9a633b8d28d95a0e5b77bac347d106c7d2d51518d0f66ba6beae680c6aba7188",
+    "src/packet_tracer_mcp/infrastructure/execution/enterprise_service_runtime.py": "5daabca9aa1450a9eae7a53592ae09b8d8290cfd97f556f76cd52f37e69adb99",
+    "tests/service_qualification_engine.py": "ecba95b02e4dec64d9915a251dea1f48bcececef6b1a91954bcd93d9032c1721",
+    "tests/test_server_service_qualification_architecture.py": "4639fe6d1bbc128c6c223923543ac9782230283d053e3d5e0b732ad79545309b",
+    "tests/test_service_session_dhcp_budget.py": "0ab5b515c86c016892caf57f70f2c79cbf8d56d266ce6aeebf255db1581fb93f",
+    "tests/test_sp2_acquisition_boundary.py": "b4276d8672637108f53835a11fe97dc9de1be11c5324c09af7b64ffaa015b9bc",
+    "tests/test_sp2_eligible_acquisition.py": "a7026639b7dae9713509160467ce0c4f468a12b974e2b76eb69d4f663de0f3ab",
+    "tests/test_sp2_eligible_acquisition_stage.py": "717c37392a39e8eb8c5eacb4413f6e0a20ee5c1d682d2591d420fe86e20d5911"
+  },
+  "tree": "566f4635697484f328c3514f4a1b4b1d443620bf"
+}

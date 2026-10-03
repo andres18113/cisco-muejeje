@@ -1,0 +1,13 @@
+{
+  "lead/tools/authority.py": "lead/tools/authority.py.txt",
+  "lead/tools/close_episode.py": "lead/tools/close_episode.py.txt",
+  "lead/tools/exit_census.py": "lead/tools/exit_census.py.txt",
+  "lead/tools/launch_owned_lab.py": "lead/tools/launch_owned_lab.py.txt",
+  "lead/tools/make_episode.py": "lead/tools/make_episode.py.txt",
+  "lead/tools/open_episode.py": "lead/tools/open_episode.py.txt",
+  "lead/tools/preopen.py": "lead/tools/preopen.py.txt",
+  "lead/tools/publish_seal.py": "lead/tools/publish_seal.py.txt",
+  "lead/tools/retire_owned_lab.py": "lead/tools/retire_owned_lab.py.txt",
+  "lead/tools/run_qualification.py": "lead/tools/run_qualification.py.txt",
+  "lead/tools/seal_episode.py": "lead/tools/seal_episode.py.txt"
+}

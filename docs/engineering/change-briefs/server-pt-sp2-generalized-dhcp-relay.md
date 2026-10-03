@@ -2628,3 +2628,46 @@ Its exact reviewed helper snapshot is
 `f74d300c8a21d04987ff72385853ae3e1238173409ab877f03d954fb019afed4`.
 The old snapshots, findings and negative checks are retained separately. Scope is
 exact helper bytes, not source delivery, LIVE admission or phase acceptance.
+
+### E10 continuation checkpoint, 2026-10-03
+
+Execution source `40d6cfc46f23a44c9e087c484664808324fe8436`, tree
+`566f4635697484f328c3514f4a1b4b1d443620bf`, passed the complete local suite:
+8,893 passed, six skipped, three existing warnings. All six exact-source CI jobs
+in run `37153740989` succeeded; per-job skip reasons are retained in the
+[checkpoint report](../../reference/server-pt/evidence/sp2-e10-continuation-2026-10-03/README.md).
+The preceding architecture inventory failure was corrected and retained; it is
+not the current source result. This publication successor changes evidence and
+documentation only; native provenance stays attached to `40d6cfc`.
+
+Episode 10, attempt `cc423f961af6c86f4917687541af4133`, measured the reviewed v2
+eligible cohort on PT `9.0.1.0858` / file. Four fixed explicit-start subjects
+acquired stable usable leases with exact intended-pool joins; seven untouched
+controls stayed unassigned. The measured `explicit_start_only` contrast is
+SUPPORTED_IN_SAMPLE. The original product status remains `failed`, with
+`product_accepted=false`; dependent service requests were withheld before the
+intervention. No post-intervention cold HTTP/public acceptance was demonstrated.
+This supports selecting a maintained acquisition-lifecycle correction within
+the observed scope, not promotion of generic/native/relay capability.
+
+Qualification completed with 574 operations, 1,319.875 seconds elapsed and a
+337.453 seconds of accumulated local authority observations. The shared
+acquisition window separately lasted 139.531 seconds. Restoration was proven; owned
+retirement and closing evidence prove final cleanup `verified_clean`, although
+the qualification's earlier top-level dirty-state field is `unknown`. No owned
+process, mailbox command or campaign lock remained. The immutable
+[E10 archive](../../reference/server-pt/evidence/sp2-generalized-dhcp-relay-01/e10/README.md)
+contains 248 manifest entries, all hash-verified against the sealed copy.
+
+Fresh post-E10 accounting has zero index findings and no open episode:
+3,192 cumulative charged operations / 9,018.09912 seconds; 15,808 ordinary
+operations / 11,981.90088 seconds remain. E10's enclosing lifecycle charge is
+574 operations / 2,601.965429 seconds. Preserve the separate 1,000-operation /
+600-second finalization reserve and recheck admission before another effect.
+
+Status remains ACTIVE_CONTINUATION_NOT_PHASE_ACCEPTANCE. Maintained public
+product integration, registered four-argument default-catalog mixed 5+3+3
+acceptance and simultaneous native local-36 remain pending. Offline 997-client
+scale is not native capacity. No READY_FOR_REVIEW, phase closure or merge is
+claimed. The user's requested commit/CI checkpoint and report preserve those
+remaining requirements explicitly.

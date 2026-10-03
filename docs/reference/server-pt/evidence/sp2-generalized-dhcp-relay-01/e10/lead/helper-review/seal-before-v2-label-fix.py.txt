@@ -1,0 +1,238 @@
+"""Seal one closed mixed/capacity episode under the ignored governed store.
+
+The complete exact file set and bytes are verified before any later episode.
+A later publication copies the seal unchanged into docs and verifies equality.
+The e7 archive helper and historical records remain unchanged.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+from authority import (
+    MEASUREMENT_PREFIX,
+    cleanup_assessment,
+    prepared_plan,
+    regular,
+    require_opening,
+    required_evidence,
+    verify_tools,
+)
+from publish_seal import verify
+
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+from packet_tracer_mcp.shared.utils import resolve_within, safe_name_component
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+).resolve()
+EPISODE = Path(sys.argv[1]).resolve()
+if not EPISODE.is_relative_to(ROOT / "data" / "services" / "sp2-governed"):
+    raise RuntimeError("episode_path_outside_governed_root")
+verify_tools(EPISODE, Path(__file__))
+prepared_ids = json.loads((EPISODE / "ids.json").read_text(encoding="utf-8"))
+TARGET = resolve_within(
+    ROOT,
+    "data",
+    "services",
+    "sp2-governed",
+    "sealed",
+    safe_name_component(
+        "episode-"
+        + str(int(prepared_ids["episode"]))
+        + "-"
+        + prepared_ids["attempt_id"]
+    ),
+)
+if TARGET.exists():
+    raise RuntimeError("archive_target_exists")
+
+
+def digest(path: Path) -> str:
+    """Hash one archived file's exact bytes."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load(path: Path) -> dict:
+    """Read one required JSON record."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def git(*args: str) -> str:
+    """Read one bounded Git value from the governed checkout."""
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+ids = load(EPISODE / "ids.json")
+if ids != prepared_ids or ids.get("stage") not in MEASUREMENT_PREFIX:
+    raise RuntimeError("prepared_stage_identity_invalid")
+capacity = ids["stage"] == "SP2-CAPACITY-PRODUCT"
+acquisition = ids["stage"] in {"SP2-MIXED-ACQUISITION", "SP2-ELIGIBLE-ACQUISITION"}
+if git("status", "--porcelain=v1") or git("rev-parse", "HEAD") != ids["head"]:
+    raise RuntimeError("archive_source_not_clean_exact_commit")
+if git("rev-parse", "HEAD^{tree}") != ids["tree"]:
+    raise RuntimeError("archive_tree_differs")
+store = ServerPtCommissioningStore(ROOT, SP2_CAMPAIGN.campaign_id)
+if store.verify_index():
+    raise RuntimeError("campaign_store_index_unverified")
+plan = prepared_plan(EPISODE, ids)
+require_opening(ROOT, EPISODE, ids, store, closed=True)
+closing = store.ledger_records().get(f"episode-{ids['episode']:04d}-closing")
+if closing is None or any(
+    closing.get(k) != v
+    for k, v in {
+        "kind": "episode_closing",
+        "episode": ids["episode"],
+        "attempt_id": ids["attempt_id"],
+        "stage": ids["stage"],
+        "source_sha": ids["head"],
+        "source_tree": ids["tree"],
+    }.items()
+):
+    raise RuntimeError("episode_closing_identity_differs")
+if (EPISODE / "12-close-episode.exit").read_text(encoding="utf-8").strip() != "0":
+    raise RuntimeError("episode_close_failed")
+census_name = next(
+    name
+    for name in ("11c-exit-census.json", "11b-exit-census.json", "11-exit-census.json")
+    if (EPISODE / name).is_file()
+)
+census_path = EPISODE / census_name
+if closing.get("exit_census_sha256") != digest(census_path):
+    raise RuntimeError("closing_census_hash_differs")
+clean, cleanup_label, disposition = cleanup_assessment(
+    ROOT, EPISODE, ids, store, census_path
+)
+if (
+    closing.get("cleanup_state") != cleanup_label
+    or closing.get("exit_disposition", disposition) != disposition
+):
+    raise RuntimeError("closing_cleanup_disposition_differs")
+summary, record_path, record, measure, final, product_path = required_evidence(
+    ROOT, EPISODE, ids, plan, store
+)
+# Every requirement is checked before creating the archive-stage directory.
+for retained in EPISODE.rglob("*"):
+    if (
+        retained.is_symlink()
+        or getattr(retained.lstat(), "st_file_attributes", 0) & 1024
+        or not retained.resolve().is_relative_to(EPISODE)
+    ):
+        raise RuntimeError("episode_retained_inventory_path_escaped")
+    if retained.is_file():
+        regular(retained)
+stage = resolve_within(
+    ROOT,
+    "data",
+    "services",
+    "sp2-governed",
+    safe_name_component("archive-stage-" + uuid4().hex),
+)
+if stage.exists():
+    raise RuntimeError("archive_stage_exists")
+verify_tools(EPISODE, Path(__file__))
+if store.verify_index():
+    raise RuntimeError("campaign_store_changed_before_seal")
+stage.mkdir(parents=True, exist_ok=False)
+shutil.copytree(
+    EPISODE, stage / "lead", ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+)
+archive_path_map = {}
+for script in (stage / "lead").rglob("*.py"):
+    archive_path_map[script.relative_to(stage).as_posix()] = (
+        script.relative_to(stage).as_posix() + ".txt"
+    )
+    script.rename(script.with_name(script.name + ".txt"))
+(stage / "archive-path-map.json").write_text(
+    json.dumps(archive_path_map, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+)
+store_path = resolve_within(ROOT, "data", "commissioning", SP2_CAMPAIGN.campaign_id)
+shutil.copytree(store_path, stage / "store")
+(stage / "record").mkdir()
+if record_path is not None and record is not None:
+    shutil.copy2(record_path, stage / "record" / record_path.name)
+if product_path is not None:
+    (stage / "product").mkdir()
+    shutil.copy2(product_path, stage / "product" / product_path.name)
+readme = (
+    f"# SP-2 {'acquisition discriminator' if acquisition else 'capacity product' if capacity else 'mixed product'}, episode {ids['episode']}\n\n"
+    f"Executed commit `{ids['head']}`, tree `{ids['tree']}`; build `9.0.1.0858`, "
+    f"file channel, stage `{ids['stage']}` profile v1.\n\n"
+    f"Attempt `{ids['attempt_id']}`; campaign `{SP2_CAMPAIGN.campaign_id}`. "
+    f"Qualification `{summary.get('outcome', 'unobserved')}`; "
+    f"product `{(measure or {}).get('conclusion', 'not_run')}`; "
+    f"terminal `{(final or {}).get('conclusion', 'not_run')}`. "
+    f"Final cleanup `{cleanup_label}`; retirement attempts "
+    f"`{json.dumps(closing.get('retirement_attempts', []), sort_keys=True)}`.\n\n"
+    f"Primary failure `{summary.get('primary_failure') or 'none'}`; secondary "
+    f"`{json.dumps(summary.get('secondary_failures') or [])}`; "
+    f"operations `{summary.get('operations_used')}`.\n\n"
+    "This is a private candidate measurement of the maintained product on one "
+    "owned disposable laboratory. The selected simultaneous demand is "
+    + (
+        "36 local native plus 13/5 remote named-pool clients (54 total). "
+        if capacity
+        else "five local native plus three clients at each of two remote named pools (11 total); "
+        "after the product, one typed intervention per arm client (reassertion, "
+        "explicit dhcpRun start, or none) and one shared window. "
+        if acquisition
+        else "five local native plus three clients at each of two remote named pools (11 total). "
+    )
+    + "Actual acceptance and raw observations are in the complete sealed qualification/product records; configuration alone proves no leases. "
+    "This is not a default catalog support record or registered default-catalog "
+    "acceptance. Other builds/channels, giaddr, universal table exhaustion/absence, "
+    "exclusive serving, renewal and dhcpRun causality remain unverified. "
+    "Raw finite-prefix index observations retain their reader/source context.\n"
+)
+(stage / "README.md").write_text(readme, encoding="utf-8", newline="\n")
+files = sorted(
+    path
+    for path in stage.rglob("*")
+    if path.is_file() and path.name != "MANIFEST.sha256"
+)
+if any(path.suffix == ".py" for path in files):
+    raise RuntimeError("archive_contains_executable_python")
+manifest = "".join(
+    f"{digest(path)}  {path.relative_to(stage).as_posix()}\n" for path in files
+)
+(stage / "MANIFEST.sha256").write_text(manifest, encoding="utf-8", newline="\n")
+before, manifest_hash = verify(stage)
+if not stage.resolve().is_relative_to(ROOT) or not TARGET.resolve().is_relative_to(
+    ROOT
+):
+    raise RuntimeError("archive_move_outside_workspace")
+TARGET.parent.mkdir(parents=True, exist_ok=True)
+os.replace(stage, TARGET)
+after, moved_manifest_hash = verify(TARGET)
+if before != after or manifest_hash != moved_manifest_hash:
+    raise RuntimeError("archive_bytes_or_inventory_changed_after_move")
+print(
+    json.dumps(
+        {
+            "archive": str(TARGET),
+            "files": len(files),
+            "manifest_sha256": digest(TARGET / "MANIFEST.sha256"),
+            "qualification_sha256": digest(TARGET / "record" / record_path.name)
+            if record_path is not None and record is not None
+            else "",
+            "product_sha256": digest(TARGET / "product" / product_path.name)
+            if product_path is not None
+            else "",
+            "cleanup_clean": clean,
+            "assessment": (measure or {}).get("conclusion", "not_run"),
+        },
+        sort_keys=True,
+    )
+)

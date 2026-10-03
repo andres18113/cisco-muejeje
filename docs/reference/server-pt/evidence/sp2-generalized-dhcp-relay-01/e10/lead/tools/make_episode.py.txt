@@ -1,0 +1,358 @@
+"""Prepare a fresh mixed/capacity episode after clean exact-source verification.
+
+This successor derives the next closed-ledger episode and actual registered
+stage. It creates preparation files only, opens no allocation and contacts
+no Packet Tracer process. Its e7 template remains unchanged.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import secrets
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+from authority import verify_tools, verify_verification
+
+from packet_tracer_mcp.adapters.cli.sp2_mixed_qualification import (
+    sp2_capacity_product_contract,
+    sp2_mixed_product_contract,
+)
+from packet_tracer_mcp.application.use_cases.qualify_server_services import (
+    SP2_CAPACITY_CONFIGURATION_SHA256,
+    SP2_CAPACITY_MANIFEST_SHA256,
+    SP2_CAPACITY_NORMALIZED_SERVICES_SHA256,
+    SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256,
+    SP2_CAPACITY_TOPOLOGY_SHA256,
+    SP2_MIXED_CONFIGURATION_SHA256,
+    SP2_MIXED_MANIFEST_SHA256,
+    SP2_MIXED_NORMALIZED_SERVICES_SHA256,
+    SP2_MIXED_SERVICE_CAPABILITIES_SHA256,
+    SP2_MIXED_TOPOLOGY_SHA256,
+    _sp2_capability_digest,
+    _sp2_mixed_normalized_services_hash,
+)
+from packet_tracer_mcp.application.use_cases.server_pt_campaign import SP2_CAMPAIGN
+from packet_tracer_mcp.application.use_cases.server_pt_campaign_ledger import (
+    allowance_for,
+    ledger_totals,
+)
+from packet_tracer_mcp.domain.enterprise.models.service_qualification import (
+    SP2_ACQUISITION_ARMS,
+    SP2_ELIGIBLE_ACQUISITION_ARMS,
+    stage_definition,
+)
+from packet_tracer_mcp.infrastructure.execution.import_isolation_preflight import (
+    ImportIsolationPreflight,
+)
+from packet_tracer_mcp.infrastructure.persistence.server_pt_commissioning_store import (
+    ServerPtCommissioningStore,
+)
+from packet_tracer_mcp.shared.utils import resolve_within
+
+ROOT = Path(
+    r"C:\Users\Andres\Desktop\Universidad\Uce\Cuarto\Infra\Cisco-MCP-server-services-goal-foundations"
+).resolve()
+MANDATE = (
+    ROOT / "docs/reference/server-pt/assignments/Prompt_SP2_Generalized_DHCP_Relay.md"
+)
+BUILD = "9.0.1.0858"
+STAGES = ("SP2-MIXED-PRODUCT", "SP2-CAPACITY-PRODUCT", "SP2-MIXED-ACQUISITION", "SP2-ELIGIBLE-ACQUISITION")
+#: The planned worst case each registered stage must still declare.
+PLANNED_MINIMUM = {
+    "SP2-MIXED-PRODUCT": 3002,
+    "SP2-CAPACITY-PRODUCT": 5982,
+    "SP2-MIXED-ACQUISITION": 3202,
+    "SP2-ELIGIBLE-ACQUISITION": 3202,
+}
+
+
+def git(*args: str) -> str:
+    """Read one bounded value from the governed source tree."""
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15
+    ).stdout.strip()
+
+
+def save(path: Path, value: object) -> None:
+    """Create an exclusive preparation file; never replace an earlier identity."""
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+
+def main() -> None:
+    """Validate actual provenance before producing the prospective episode."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("lead", type=Path)
+    parser.add_argument("ci_json", type=Path)
+    parser.add_argument("stage", choices=STAGES)
+    parser.add_argument("verification_json", type=Path)
+    args = parser.parse_args()
+    lead, ci_path = args.lead.resolve(), args.ci_json.resolve()
+    snapshot_hash = verify_tools(lead, Path(__file__))
+    if not lead.is_relative_to(ROOT / "data/services/sp2-governed"):
+        raise RuntimeError("episode_path_outside_governed_root")
+    if not ci_path.is_relative_to(lead) or ci_path.stat().st_size > 2_000_000:
+        raise RuntimeError("ci_input_outside_episode_or_over_budget")
+    if any((lead / name).exists() for name in ("ids.json", "episode-plan.json")):
+        raise RuntimeError("preparation_identity_already_exists")
+    if not ImportIsolationPreflight(ROOT).ensure_isolated().isolated:
+        raise RuntimeError("preparation_import_identity_unestablished")
+    head, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    if git("status", "--porcelain=v1") or git("branch", "--show-current") != (
+        "feature/server-pt-goal-foundations"
+    ):
+        raise RuntimeError("preparation_source_not_clean_feature_commit")
+    if hashlib.sha256(MANDATE.read_bytes()).hexdigest() != SP2_CAMPAIGN.charter_sha256:
+        raise RuntimeError("charter_bytes_changed")
+    ci = json.loads(ci_path.read_text(encoding="utf-8"))
+    expected_jobs = {
+        "quality",
+        "docs",
+        *(
+            f"pytest ({platform}, {version})"
+            for platform in ("windows-latest", "ubuntu-latest")
+            for version in ("3.11", "3.13")
+        ),
+    }
+    jobs = ci.get("jobs", [])
+    if (
+        ci.get("headSha") != head
+        or ci.get("status") != "completed"
+        or ci.get("conclusion") != "success"
+        or len(jobs) != len(expected_jobs)
+        or {job.get("name") for job in jobs} != expected_jobs
+        or any(
+            job.get("status") != "completed" or job.get("conclusion") != "success"
+            for job in jobs
+        )
+    ):
+        raise RuntimeError("exact_source_ci_not_complete_and_green")
+    verification_path = args.verification_json.resolve()
+    if not verification_path.is_relative_to(ROOT / "data/services/sp2-governed"):
+        raise RuntimeError("verification_input_outside_governed_root")
+    if verification_path != lead / "source-verification" / "verification-summary.json":
+        raise RuntimeError("verification_summary_not_retained_in_episode")
+    verification = verify_verification(lead, head, tree)
+    if (
+        verification.get("head") != head
+        or verification.get("tree") != tree
+        or verification.get("delivery_clean_exact") is not True
+    ):
+        raise RuntimeError("verification_source_identity_differs")
+    for relative, expected in verification.get("source_python_sha256", {}).items():
+        path = resolve_within(ROOT, *Path(relative).parts)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise RuntimeError("verified_python_source_bytes_changed")
+    if not verification.get("source_python_sha256"):
+        raise RuntimeError("verified_python_snapshot_absent")
+    for name, expected in verification.get("artifact_sha256", {}).items():
+        path = resolve_within(verification_path.parent, name)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise RuntimeError("verification_artifact_changed")
+    store = ServerPtCommissioningStore(ROOT, SP2_CAMPAIGN.campaign_id)
+    if store.verify_index():
+        raise RuntimeError("campaign_index_unverified")
+    ledger = store.ledger_records()
+    totals = ledger_totals(
+        ledger, allowance_for(SP2_CAMPAIGN.campaign_id), datetime.now(UTC)
+    )
+    if totals.open_episode is not None:
+        raise RuntimeError("campaign_episode_already_open")
+    episode = (
+        len([row for row in ledger.values() if row.get("kind") == "episode_opening"])
+        + 1
+    )
+    stage = args.stage
+    capacity = stage == "SP2-CAPACITY-PRODUCT"
+    eligible = stage == "SP2-ELIGIBLE-ACQUISITION"
+    acquisition = stage in {"SP2-MIXED-ACQUISITION", "SP2-ELIGIBLE-ACQUISITION"}
+    arms = SP2_ELIGIBLE_ACQUISITION_ARMS if eligible else SP2_ACQUISITION_ARMS
+    definition = stage_definition(stage)
+    if definition is None or (definition.profile_id, definition.profile_version) != (
+        stage,
+        "2" if eligible else "1",
+    ):
+        raise RuntimeError("mixed_profile_identity_changed")
+    attempt, token = secrets.token_hex(16), secrets.token_hex(16)
+    provisional_run = "prospective-e" + str(episode) + "-" + attempt
+    constructor = (
+        sp2_capacity_product_contract if capacity else sp2_mixed_product_contract
+    )
+    contract = constructor(BUILD, provisional_run)
+    bindings = {
+        "topology": contract.topology.physical_topology_hash,
+        "manifest": contract.manifest.semantic_hash,
+        "e5": contract.configuration_plan.semantic_hash,
+        "normalized_e6": _sp2_mixed_normalized_services_hash(
+            contract, provisional_run, capacity=capacity
+        ),
+        "service_catalog": _sp2_capability_digest(contract.service_capabilities),
+    }
+    expected_bindings = {
+        "topology": SP2_CAPACITY_TOPOLOGY_SHA256
+        if capacity
+        else SP2_MIXED_TOPOLOGY_SHA256,
+        "manifest": SP2_CAPACITY_MANIFEST_SHA256
+        if capacity
+        else SP2_MIXED_MANIFEST_SHA256,
+        "e5": SP2_CAPACITY_CONFIGURATION_SHA256
+        if capacity
+        else SP2_MIXED_CONFIGURATION_SHA256,
+        "normalized_e6": SP2_CAPACITY_NORMALIZED_SERVICES_SHA256
+        if capacity
+        else SP2_MIXED_NORMALIZED_SERVICES_SHA256,
+        "service_catalog": SP2_CAPACITY_SERVICE_CAPABILITIES_SHA256
+        if capacity
+        else SP2_MIXED_SERVICE_CAPABILITIES_SHA256,
+    }
+    if bindings != expected_bindings:
+        raise RuntimeError("mixed_compiled_bindings_changed")
+    if (
+        len(contract.topology.devices) != (64 if capacity else 18)
+        or len(contract.topology.links) != (65 if capacity else 17)
+        or len(definition.selected_clients) != (54 if capacity else 11)
+        or definition.planned_minimum_operations != PLANNED_MINIMUM[stage]
+    ):
+        raise RuntimeError("mixed_work_or_fixture_counts_changed")
+    ids = {
+        "episode": episode,
+        "head": head,
+        "tree": tree,
+        "attempt_id": attempt,
+        "instance_token": token,
+        "authorization_id": "SERVER-PT-SP2-E" + str(episode) + "-" + attempt,
+        "charter": str(MANDATE),
+        "stage": stage,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "build": BUILD,
+        "channel": "file",
+    }
+    allocated_operations = definition.budget.max_operations + 10
+    allocated_seconds = definition.budget.max_seconds + 600
+    if (
+        allocated_operations > totals.ordinary_operations_left
+        or allocated_seconds > totals.ordinary_seconds_left
+    ):
+        raise RuntimeError("prospective_episode_exceeds_current_ordinary_allowance")
+    plan = {
+        "episode": episode,
+        "campaign_id": SP2_CAMPAIGN.campaign_id,
+        "authorization_id": ids["authorization_id"],
+        "channel": ids["channel"],
+        "build": ids["build"],
+        "helper_snapshot_sha256": snapshot_hash,
+        "source_sha": head,
+        "source_tree": tree,
+        "stage": stage,
+        "profile_id": definition.profile_id,
+        "profile_version": definition.profile_version,
+        "attempt_ids": [attempt],
+        "instance_token": token,
+        "targets": list(definition.fixture_names),
+        "selected_clients": list(definition.selected_clients),
+        "allocated_operations": allocated_operations,
+        "allocated_seconds": allocated_seconds,
+        "allocation_arithmetic": {
+            "stage_operations": definition.budget.max_operations,
+            "stage_seconds": definition.budget.max_seconds,
+            "stage_minimum_operations": definition.planned_minimum_operations,
+            "protected_cleanup_operations": definition.reserve_operations,
+            "protected_cleanup_seconds": definition.budget.reserve_seconds,
+            "lifecycle_operations": 10,
+            "lifecycle_seconds": 600,
+            "limitation": "joint experimental cutoff; not funding all independent worst-case reader/helper tails",
+        },
+        "binding_hashes": bindings,
+        **(
+            {"acquisition_arms": dict(sorted(arms.items())), **({"required_address_state": "link_local"} if eligible else {})}
+            if acquisition
+            else {}
+        ),
+        "native_support_claim": "none; private candidate discriminator",
+        "question": (
+            "Does one guarded explicit start recover freshly eligible APIPA subjects while same-pool fixed controls remain unassigned, with assigned subjects retained as observations?"
+            if eligible else
+            (
+                "Does the unchanged mixed product again leave every client in "
+                "DHCP mode on a link-local address with the server enabled, and "
+                "then does one typed explicit start (dhcpRun) or one ordinary "
+                "DHCP-mode reassertion, unlike untouched controls, make a client "
+                "hold a stable lease attributed to its intended physical pool?"
+            )
+            if acquisition
+            else "Does one Server-PT simultaneously serve "
+            + (
+                "36 local and 13/5 remote clients"
+                if capacity
+                else "five local and three clients at each of two remote sites"
+            )
+            + " from the exact three physical pools, then cold IP HTTP, supplied resolver/DNS/hostname HTTP, with complete raw indexed observations?"
+        ),
+        "permitted_effects": [
+            "One owned disposable exact-build file-channel laboratory.",
+            "Only the maintained registered stage fixture and E5/E6 product.",
+            *(
+                ["After a fresh full census, one link-local-guarded typed AcquireDhcpLease per eligible explicit-start subject; fixed controls and assigned observers receive no intervention. Never repeat an ambiguous effect."]
+                if eligible else [
+                    "After the product, only when the link-local precondition is "
+                    "read: one ordinary DHCP-mode reassertion per reassert-arm "
+                    "client and one typed AcquireDhcpLease per explicit-start "
+                    "client under its execute-once claim; never repeated."
+                ]
+                if acquisition
+                else []
+            ),
+            "Current indexed raw lease scans and read-only terminal observations.",
+            "Protected fixture cleanup and maintained exact-owned cohort retirement.",
+        ],
+        "stop_rule": (
+            "Stop on source/process/receiver/fixture/policy mismatch, unknown "
+            "mutation outcome, unreadable or contradictory evidence, budget "
+            "or persistence failure. Finalize without mutation replay or "
+            "channel fallback. No phone effects or native phone UI/call validation."
+        ),
+        "tests_run": [
+            verification["full_result"],
+            verification["scale_result"],
+            "Clean exact-commit quality gate --base cisco/main --delivery-commit HEAD passed.",
+            "Namespace, docs and whitespace passed; only known documentation links.",
+            "Exact-source six-job CI " + str(ci["databaseId"]) + " succeeded.",
+        ],
+        "verification_summary_sha256": hashlib.sha256(
+            verification_path.read_bytes()
+        ).hexdigest(),
+        "ledger_before_preparation": {
+            "committed_operations": totals.committed_operations,
+            "committed_seconds": totals.committed_seconds,
+            "ordinary_operations_left": totals.ordinary_operations_left,
+            "ordinary_seconds_left": totals.ordinary_seconds_left,
+        },
+        "exact_ci_file": ci_path.name,
+        "exact_ci_sha256": hashlib.sha256(ci_path.read_bytes()).hexdigest(),
+        "prepared_at_utc": datetime.now(UTC).isoformat(),
+    }
+    verify_tools(lead, Path(__file__))
+    save(lead / "ids.json", ids)
+    save(lead / "episode-plan.json", plan)
+    print(
+        json.dumps(
+            {
+                "prepared": True,
+                "head": head,
+                "tree": tree,
+                "episode": episode,
+                "stage": stage,
+                "binding_hashes": bindings,
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

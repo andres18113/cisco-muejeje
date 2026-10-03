@@ -1,0 +1,74 @@
+{
+  "head": "40d6cfc46f23a44c9e087c484664808324fe8436",
+  "run": 37153740989,
+  "jobs": {
+    "pytest (ubuntu-latest, 3.13)": {
+      "skips": [
+        "[1] tests/test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local",
+        "[1] tests/test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout",
+        "[1] tests/test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here",
+        "[1] tests/test_receiver_continuity.py:332: the Win32 process reads exist only on Windows",
+        "[1] tests/test_receiver_continuity.py:353: the Win32 process reads exist only on Windows",
+        "[1] tests/test_receiver_continuity.py:381: the Win32 process reads exist only on Windows",
+        "[1] tests/test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests/test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests/test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here",
+        "[1] tests/test_windows_process_census.py:160: Win32 ctypes only",
+        "[3] tests/test_windows_process_census.py:172: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:181: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:189: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:224: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:232: Win32 ctypes only",
+        "[3] tests/test_windows_process_census.py:241: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:275: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:315: Win32 ctypes only"
+      ],
+      "summary": "8877 passed, 22 skipped, 3 warnings in 885.21s (0:14:45)"
+    },
+    "pytest (ubuntu-latest, 3.11)": {
+      "skips": [
+        "[1] tests/test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local",
+        "[1] tests/test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout",
+        "[1] tests/test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here",
+        "[1] tests/test_receiver_continuity.py:332: the Win32 process reads exist only on Windows",
+        "[1] tests/test_receiver_continuity.py:353: the Win32 process reads exist only on Windows",
+        "[1] tests/test_receiver_continuity.py:381: the Win32 process reads exist only on Windows",
+        "[1] tests/test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests/test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests/test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here",
+        "[1] tests/test_windows_process_census.py:160: Win32 ctypes only",
+        "[3] tests/test_windows_process_census.py:172: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:181: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:189: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:224: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:232: Win32 ctypes only",
+        "[3] tests/test_windows_process_census.py:241: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:275: Win32 ctypes only",
+        "[1] tests/test_windows_process_census.py:315: Win32 ctypes only"
+      ],
+      "summary": "8877 passed, 22 skipped, 3 warnings in 814.80s (0:13:34)"
+    },
+    "pytest (windows-latest, 3.11)": {
+      "skips": [
+        "[1] tests\\test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local",
+        "[1] tests\\test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout",
+        "[1] tests\\test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here",
+        "[1] tests\\test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests\\test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests\\test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here"
+      ],
+      "summary": "8893 passed, 6 skipped, 3 warnings in 1587.79s (0:26:27)"
+    },
+    "pytest (windows-latest, 3.13)": {
+      "skips": [
+        "[1] tests\\test_dhcp_native_default_sequence.py:110: the D-DHCP record is machine-local",
+        "[1] tests\\test_positive_voice_ab_evidence_ledger.py:131: no retained raw run is present in this checkout",
+        "[1] tests\\test_positive_voice_dhcp_pool_observer.py:562: the ignored qualification artefact is absent here",
+        "[1] tests\\test_server_pt_fastloop_retirement.py:2332: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests\\test_server_pt_fastloop_retirement.py:2405: opt-in: set PT_MCP_NATIVE_WINDOW_TESTS=1 on Windows",
+        "[1] tests\\test_server_pt_published_sources.py:188: the documentation extra (`.[docs]`) is not installed here"
+      ],
+      "summary": "8893 passed, 6 skipped, 3 warnings in 1434.43s (0:23:54)"
+    }
+  }
+}
